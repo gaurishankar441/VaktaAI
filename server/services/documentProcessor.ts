@@ -222,8 +222,8 @@ export class DocumentProcessorService {
       
       console.log("[PDF] Parsing PDF buffer, size:", buffer.length);
       
-      // Import and use pdf-parse - import it AFTER we have the buffer to avoid test file issues
-      const pdfParse = require('pdf-parse');
+      // Import pdf-parse dynamically
+      const pdfParse = (await import('pdf-parse')).default;
       
       // Parse the PDF
       const data = await pdfParse(buffer);
