@@ -350,19 +350,110 @@ export class DocumentProcessorService {
   private async extractFromURL(url: string): Promise<{ text: string; metadata: any }> {
     console.log("Extracting from URL:", url);
     
-    // In production, this would:
-    // 1. Fetch the webpage
-    // 2. Parse HTML and extract main content
-    // 3. Use libraries like cheerio, jsdom, or readability
-    
-    return {
-      text: "Simulated web page content extraction. In production, this would fetch and parse web pages to extract main content.",
-      metadata: {
-        url,
-        extractedAt: new Date().toISOString(),
-        method: 'simulated_web_extraction'
+    try {
+      // Validate URL and check for SSRF
+      await this.validateUrlForSSRF(url);
+      
+      // Fetch the webpage with timeout
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+      
+      let html: string;
+      try {
+        const response = await fetch(url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+          },
+          signal: controller.signal
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to fetch URL: ${response.status} ${response.statusText}`);
+        }
+
+        // Check content type
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('text/html')) {
+          throw new Error(`Invalid content type: ${contentType}. Expected text/html`);
+        }
+
+        // Limit response size to 4MB
+        const maxSize = 4 * 1024 * 1024; // 4MB
+        const contentLength = response.headers.get('content-length');
+        if (contentLength && parseInt(contentLength) > maxSize) {
+          throw new Error(`Content too large: ${contentLength} bytes (max ${maxSize})`);
+        }
+
+        html = await response.text();
+      } finally {
+        clearTimeout(timeout);
       }
-    };
+
+      // Parse with jsdom and use Readability for content extraction
+      const { JSDOM } = await import('jsdom');
+      const { Readability } = await import('@mozilla/readability');
+      
+      const dom = new JSDOM(html, { url });
+      const reader = new Readability(dom.window.document);
+      const article = reader.parse();
+
+      // Extract additional metadata using cheerio for more control
+      const cheerio = await import('cheerio');
+      const $ = cheerio.load(html);
+      
+      let text = '';
+      let title = 'Untitled';
+      let author = 'Unknown Author';
+      let description = '';
+      
+      if (article) {
+        // Use Readability results if available
+        text = article.textContent || '';
+        title = article.title || $('title').text() || 'Untitled';
+        author = article.byline || 
+                      $('meta[name="author"]').attr('content') || 
+                      $('meta[property="article:author"]').attr('content') || 
+                      'Unknown Author';
+        description = article.excerpt || 
+                     $('meta[name="description"]').attr('content') || 
+                     $('meta[property="og:description"]').attr('content') || '';
+      } else {
+        // Fallback: Extract text from body with cheerio
+        console.warn("Readability failed, using fallback extraction");
+        $('script, style, noscript, iframe').remove();
+        text = $('body').text().replace(/\s+/g, ' ').trim();
+        title = $('title').text() || 
+               $('meta[property="og:title"]').attr('content') || 
+               'Untitled';
+        author = $('meta[name="author"]').attr('content') || 
+                $('meta[property="article:author"]').attr('content') || 
+                'Unknown Author';
+        description = $('meta[name="description"]').attr('content') || 
+                     $('meta[property="og:description"]').attr('content') || '';
+      }
+      
+      const publishDate = $('meta[property="article:published_time"]').attr('content') ||
+                         $('meta[name="publish_date"]').attr('content') ||
+                         $('time[datetime]').attr('datetime');
+      
+      return {
+        text: text.trim(),
+        metadata: {
+          url,
+          title,
+          author,
+          publishDate,
+          description,
+          siteName: $('meta[property="og:site_name"]').attr('content'),
+          extractedAt: new Date().toISOString(),
+          method: 'readability_cheerio'
+        }
+      };
+    } catch (error) {
+      console.error("URL extraction failed:", error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to extract web content: ${errorMessage}`);
+    }
   }
 
   private createChunks(text: string, metadata: any, sourceType: string): ChunkData[] {
@@ -438,6 +529,60 @@ export class DocumentProcessorService {
     }
     
     return '';
+  }
+
+  private async validateUrlForSSRF(url: string): Promise<void> {
+    // Parse URL
+    const parsed = new URL(url);
+    
+    // Only allow http and https
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      throw new Error(`Invalid protocol: ${parsed.protocol}. Only http and https are allowed.`);
+    }
+    
+    // Block .onion and local/private URLs
+    const hostname = parsed.hostname.toLowerCase();
+    
+    // Block .onion (Tor)
+    if (hostname.endsWith('.onion')) {
+      throw new Error('Onion addresses are not allowed');
+    }
+    
+    // Block localhost variations
+    if (hostname === 'localhost' || hostname.startsWith('localhost.')) {
+      throw new Error('Localhost addresses are not allowed');
+    }
+    
+    // Resolve DNS to check for private/loopback IPs
+    try {
+      const dns = await import('dns/promises');
+      const addresses = await dns.resolve(hostname);
+      
+      for (const address of addresses) {
+        // Block loopback (127.0.0.0/8, ::1)
+        if (address.startsWith('127.') || address === '::1') {
+          throw new Error(`Loopback IP addresses are not allowed: ${address}`);
+        }
+        
+        // Block private ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
+        if (address.startsWith('10.') || 
+            address.startsWith('192.168.') ||
+            /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(address)) {
+          throw new Error(`Private IP addresses are not allowed: ${address}`);
+        }
+        
+        // Block link-local (169.254.0.0/16, fe80::/10)
+        if (address.startsWith('169.254.') || address.toLowerCase().startsWith('fe80:')) {
+          throw new Error(`Link-local IP addresses are not allowed: ${address}`);
+        }
+      }
+    } catch (error) {
+      // If DNS resolution fails, allow the request (fetch will fail anyway if unreachable)
+      if (error instanceof Error && error.message.includes('not allowed')) {
+        throw error; // Re-throw validation errors
+      }
+      console.warn('DNS resolution failed for', hostname, error);
+    }
   }
 
   async deleteDocument(documentId: string): Promise<void> {
