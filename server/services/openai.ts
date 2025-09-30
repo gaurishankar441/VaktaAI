@@ -105,10 +105,23 @@ export class OpenAIService {
       console.log("[OpenAI] Tokens used:", response.usage?.total_tokens || 0);
 
       const content = response.choices[0].message.content || "";
+      const finishReason = response.choices[0].finish_reason;
+      
+      // If finish reason is "length", the response was cut off but may have partial content
+      if (finishReason === "length") {
+        console.warn("[OpenAI] Response was truncated due to length limit. Partial content:", content?.substring(0, 100));
+        // If we got some content, use it; otherwise return a helpful message
+        if (content && content.trim().length > 0) {
+          return {
+            content: content + "\n\n[Response was truncated due to length limit]",
+            tokens: response.usage?.total_tokens || 0,
+          };
+        }
+      }
       
       if (!content || content.trim().length === 0) {
-        console.error("[OpenAI] Empty content received! Finish reason:", response.choices[0].finish_reason);
-        throw new Error(`OpenAI returned empty content. Finish reason: ${response.choices[0].finish_reason}`);
+        console.error("[OpenAI] Empty content received! Finish reason:", finishReason);
+        throw new Error(`OpenAI returned empty content. Finish reason: ${finishReason}`);
       }
 
       return {

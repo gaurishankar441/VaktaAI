@@ -157,7 +157,7 @@ export class RAGService {
           ],
           {
             responseFormat: { type: "json_object" },
-            maxTokens: 1000,
+            maxTokens: 2000,
           }
         );
 
