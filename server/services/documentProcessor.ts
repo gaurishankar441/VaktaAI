@@ -203,29 +203,38 @@ export class DocumentProcessorService {
     console.log("[PDF] Extracting from PDF:", url);
     
     try {
-      // Import object storage service
-      const { objectStorageService } = await import('../objectStorage.js');
+      let buffer: Buffer;
       
-      // Generate signed URL for secure file access (1 hour TTL)
-      const signedUrl = await objectStorageService.getSignedDownloadURL(url, 3600);
-      console.log("[PDF] Using signed URL for download");
-      
-      // Fetch the PDF file using signed URL
-      const response = await fetch(signedUrl);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch PDF: ${response.status} ${response.statusText}`);
+      // Check if it's a local file (attached_assets)
+      if (url.startsWith('attached_assets/')) {
+        console.log("[PDF] Reading local file from filesystem");
+        const fs = await import('fs/promises');
+        const path = await import('path');
+        const filePath = path.join(process.cwd(), url);
+        buffer = await fs.readFile(filePath);
+      } else {
+        // Import object storage service for cloud files
+        const { objectStorageService } = await import('../objectStorage.js');
+        
+        // Generate signed URL for secure file access (1 hour TTL)
+        const signedUrl = await objectStorageService.getSignedDownloadURL(url, 3600);
+        console.log("[PDF] Using signed URL for download");
+        
+        // Fetch the PDF file using signed URL
+        const response = await fetch(signedUrl);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch PDF: ${response.status} ${response.statusText}`);
+        }
+        
+        // Get the PDF as a buffer
+        const arrayBuffer = await response.arrayBuffer();
+        buffer = Buffer.from(arrayBuffer);
       }
-      
-      // Get the PDF as a buffer
-      const arrayBuffer = await response.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
       
       console.log("[PDF] Parsing PDF buffer, size:", buffer.length);
       
-      // Import pdf-parse dynamically
-      const pdfParse = (await import('pdf-parse')).default as any;
-      
-      // Parse the PDF
+      // Parse the PDF using top-level imported pdfParse
+      // (top-level import ensures module.parent is set, avoiding debug mode)
       const data = await pdfParse(buffer);
       
       console.log("[PDF] Extracted text length:", data.text.length);
@@ -275,22 +284,32 @@ export class DocumentProcessorService {
     
     try {
       const mammoth = await import('mammoth');
+      let buffer: Buffer;
       
-      // Import object storage service
-      const { objectStorageService } = await import('../objectStorage.js');
-      
-      // Generate signed URL for secure file access (1 hour TTL)
-      const signedUrl = await objectStorageService.getSignedDownloadURL(url, 3600);
-      console.log("[DOCX] Using signed URL for download");
-      
-      // Fetch the DOCX file using signed URL
-      const response = await fetch(signedUrl);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch DOCX: ${response.statusText}`);
+      // Check if it's a local file (attached_assets)
+      if (url.startsWith('attached_assets/')) {
+        console.log("[DOCX] Reading local file from filesystem");
+        const fs = await import('fs/promises');
+        const path = await import('path');
+        const filePath = path.join(process.cwd(), url);
+        buffer = await fs.readFile(filePath);
+      } else {
+        // Import object storage service for cloud files
+        const { objectStorageService } = await import('../objectStorage.js');
+        
+        // Generate signed URL for secure file access (1 hour TTL)
+        const signedUrl = await objectStorageService.getSignedDownloadURL(url, 3600);
+        console.log("[DOCX] Using signed URL for download");
+        
+        // Fetch the DOCX file using signed URL
+        const response = await fetch(signedUrl);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch DOCX: ${response.statusText}`);
+        }
+        
+        const arrayBuffer = await response.arrayBuffer();
+        buffer = Buffer.from(arrayBuffer);
       }
-      
-      const arrayBuffer = await response.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
       
       // Extract text using mammoth
       const result = await mammoth.extractRawText({ buffer });
