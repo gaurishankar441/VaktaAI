@@ -72,20 +72,15 @@ function Router() {
 
   return (
     <Switch>
-      {isAuthenticated ? (
-        <>
-          <Route path="/" component={() => <ProtectedRoute component={Dashboard} />} />
-          <Route path="/chat" component={() => <ProtectedRoute component={Chat} />} />
-          <Route path="/tutor" component={() => <ProtectedRoute component={Tutor} />} />
-          <Route path="/notes" component={() => <ProtectedRoute component={Notes} />} />
-          <Route path="/quizzes" component={() => <ProtectedRoute component={Quizzes} />} />
-          <Route path="/flashcards" component={() => <ProtectedRoute component={Flashcards} />} />
-          <Route path="/resources" component={() => <ProtectedRoute component={Resources} />} />
-          <Route path="/settings" component={() => <ProtectedRoute component={Settings} />} />
-        </>
-      ) : (
-        <Route path="/" component={Landing} />
-      )}
+      <Route path="/" component={isAuthenticated ? () => <ProtectedRoute component={Dashboard} /> : Landing} />
+      <Route path="/dashboard" component={() => <ProtectedRoute component={Dashboard} />} />
+      <Route path="/chat" component={() => <ProtectedRoute component={Chat} />} />
+      <Route path="/tutor" component={() => <ProtectedRoute component={Tutor} />} />
+      <Route path="/notes" component={() => <ProtectedRoute component={Notes} />} />
+      <Route path="/quizzes" component={() => <ProtectedRoute component={Quizzes} />} />
+      <Route path="/flashcards" component={() => <ProtectedRoute component={Flashcards} />} />
+      <Route path="/resources" component={() => <ProtectedRoute component={Resources} />} />
+      <Route path="/settings" component={() => <ProtectedRoute component={Settings} />} />
       <Route component={NotFound} />
     </Switch>
   );
