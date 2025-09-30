@@ -116,6 +116,20 @@ export class AITutorService {
           messageType: 'explanation',
         };
       } else {
+        // Calculate optimal max_tokens for JSON response
+        // AI Tutor responses include: explanation, worked_example, practice_prompt
+        // Typical response: 800-1200 tokens + JSON structure overhead
+        // Apply 3-layer token allocation strategy:
+        // 1. Base allocation: 2000 tokens (for comprehensive explanations)
+        // 2. Context boost: +500 tokens (for worked examples)
+        // 3. Estimation buffer: 15% (for JSON format completion)
+        const baseAllocation = 2000;
+        const contextBoost = 500;
+        const estimationBuffer = Math.ceil((baseAllocation + contextBoost) * 0.15);
+        const calculatedMaxTokens = baseAllocation + contextBoost + estimationBuffer;
+        
+        console.log(`[AI Tutor] Allocating ${calculatedMaxTokens} tokens for response (base: ${baseAllocation}, boost: ${contextBoost}, buffer: ${estimationBuffer})`);
+
         const response = await openaiService.chatCompletion(
           [
             {
@@ -129,7 +143,7 @@ export class AITutorService {
           ],
           {
             responseFormat: { type: "json_object" },
-            maxTokens: 1500,
+            maxTokens: calculatedMaxTokens,
           }
         );
 
