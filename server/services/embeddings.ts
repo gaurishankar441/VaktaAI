@@ -1,5 +1,5 @@
 import { openaiService } from './openai.js';
-import { pineconeService } from './pinecone.js';
+import { vectorStore } from './vectorStore.js';
 import { storage } from '../storage.js';
 import type { Chunk, Document } from '@shared/schema';
 
@@ -34,8 +34,8 @@ export class EmbeddingService {
   }
 
   async storeChunkEmbeddings(chunks: EmbeddingChunk[], documentId: string): Promise<void> {
-    if (!pineconeService.isAvailable()) {
-      console.warn("Pinecone not available, skipping vector storage");
+    if (!vectorStore.isAvailable()) {
+      console.warn(`Vector store not available (tried Pinecone and Qdrant), skipping vector storage`);
       return;
     }
 
@@ -64,7 +64,8 @@ export class EmbeddingService {
           },
         }));
 
-      await pineconeService.upsertVectors(vectors, namespace);
+      await vectorStore.upsertVectors(vectors, namespace);
+      console.log(`Stored ${vectors.length} vectors in ${vectorStore.getStoreName()} (namespace: ${namespace})`);
 
       // Update chunks with vector references
       for (const chunk of chunks) {
@@ -90,13 +91,13 @@ export class EmbeddingService {
       const queryEmbedding = await openaiService.createEmbedding(query);
       const allMatches: { chunk: Chunk; score: number }[] = [];
 
-      if (pineconeService.isAvailable()) {
+      if (vectorStore.isAvailable()) {
         // Query each document namespace
         for (const documentId of documentIds) {
           const namespace = `doc_${documentId}`;
           
           try {
-            const results = await pineconeService.queryVectors(
+            const results = await vectorStore.queryVectors(
               queryEmbedding.embedding,
               topK,
               namespace
@@ -118,7 +119,7 @@ export class EmbeddingService {
         return allMatches.slice(0, topK).map(match => match.chunk);
       } else {
         // Fallback: return all chunks from documents (less efficient)
-        console.warn("Pinecone not available, using fallback text search");
+        console.warn("Vector store not available, using fallback text search");
         const allChunks: Chunk[] = [];
         
         for (const documentId of documentIds) {
@@ -140,13 +141,13 @@ export class EmbeddingService {
   }
 
   async deleteDocumentEmbeddings(documentId: string): Promise<void> {
-    if (!pineconeService.isAvailable()) {
+    if (!vectorStore.isAvailable()) {
       return;
     }
 
     try {
       const namespace = `doc_${documentId}`;
-      await pineconeService.deleteNamespace(namespace);
+      await vectorStore.deleteNamespace(namespace);
     } catch (error) {
       console.error(`Failed to delete embeddings for document ${documentId}:`, error);
       // Don't throw, as this is cleanup
