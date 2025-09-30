@@ -107,16 +107,37 @@ export class OpenAIService {
       const content = response.choices[0].message.content || "";
       const finishReason = response.choices[0].finish_reason;
       
-      // If finish reason is "length", the response was cut off but may have partial content
+      // If finish reason is "length", the response was cut off
       if (finishReason === "length") {
-        console.warn("[OpenAI] Response was truncated due to length limit. Partial content:", content?.substring(0, 100));
-        // If we got some content, use it; otherwise return a helpful message
+        console.warn("[OpenAI] Response was truncated due to length limit");
+        console.warn("[OpenAI] Partial content length:", content?.length || 0);
+        console.warn("[OpenAI] Content preview:", content?.substring(0, 200));
+        
+        // For JSON responses, try to repair/complete the JSON
+        if (options.responseFormat?.type === 'json_object' && content) {
+          // Return the partial content - the caller will handle JSON parsing
+          return {
+            content: content,
+            tokens: response.usage?.total_tokens || 0,
+            truncated: true,
+          };
+        }
+        
+        // For text responses, append a note about truncation
         if (content && content.trim().length > 0) {
           return {
             content: content + "\n\n[Response was truncated due to length limit]",
             tokens: response.usage?.total_tokens || 0,
+            truncated: true,
           };
         }
+        
+        // If no content at all, return a fallback message
+        return {
+          content: "The response was too long and could not be completed. Please try a more specific query.",
+          tokens: response.usage?.total_tokens || 0,
+          truncated: true,
+        };
       }
       
       if (!content || content.trim().length === 0) {
