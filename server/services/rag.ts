@@ -143,6 +143,7 @@ export class RAGService {
           tokensUsed: 0,
         };
       } else {
+        console.log("[RAG] Calling OpenAI chat completion...");
         const response = await openaiService.chatCompletion(
           [
             {
@@ -160,20 +161,40 @@ export class RAGService {
           }
         );
 
+        console.log("[RAG] OpenAI response received, length:", response.content?.length || 0);
+        console.log("[RAG] Response preview:", response.content?.substring(0, 200));
+
         // Try to parse JSON, fallback to plain text if it fails
         let parsedResponse;
         try {
+          if (!response.content || response.content.trim().length === 0) {
+            throw new Error("Empty response from OpenAI");
+          }
           parsedResponse = JSON.parse(response.content);
+          console.log("[RAG] Successfully parsed JSON response");
         } catch (parseError) {
-          console.warn("Failed to parse OpenAI response as JSON, using plain text:", parseError);
-          parsedResponse = {
-            answer: response.content,
-            takeaways: []
-          };
+          console.warn("[RAG] Failed to parse OpenAI response as JSON:", parseError.message);
+          console.log("[RAG] Raw content:", response.content);
+          // If response.content has actual content, use it
+          if (response.content && response.content.trim().length > 0) {
+            parsedResponse = {
+              answer: response.content,
+              takeaways: []
+            };
+          } else {
+            // If no content at all, generate a helpful message
+            parsedResponse = {
+              answer: "I apologize, but I couldn't generate a response. Please try rephrasing your question or check if the document has been properly processed.",
+              takeaways: []
+            };
+          }
         }
         
+        const finalAnswer = parsedResponse.answer || "No answer could be generated from the provided context.";
+        console.log("[RAG] Final answer length:", finalAnswer.length);
+        
         return {
-          answer: parsedResponse.answer || response.content || "No answer generated.",
+          answer: finalAnswer,
           takeaways: Array.isArray(parsedResponse.takeaways) ? parsedResponse.takeaways : [],
           citations: includedCitations,
           tokensUsed: response.tokens,
