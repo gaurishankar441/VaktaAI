@@ -88,6 +88,10 @@ export class OpenAIService {
     } = {}
   ): Promise<ChatResponse> {
     try {
+      console.log("[OpenAI] Calling chat completion with model:", options.model || "gpt-5");
+      console.log("[OpenAI] Response format:", options.responseFormat?.type || "text");
+      console.log("[OpenAI] Max tokens:", options.maxTokens || "default");
+      
       const response = await openai.chat.completions.create({
         model: options.model || "gpt-5",
         messages: messages as any,
@@ -95,12 +99,24 @@ export class OpenAIService {
         max_completion_tokens: options.maxTokens,
       });
 
+      console.log("[OpenAI] Response received");
+      console.log("[OpenAI] Finish reason:", response.choices[0].finish_reason);
+      console.log("[OpenAI] Content length:", response.choices[0].message.content?.length || 0);
+      console.log("[OpenAI] Tokens used:", response.usage?.total_tokens || 0);
+
+      const content = response.choices[0].message.content || "";
+      
+      if (!content || content.trim().length === 0) {
+        console.error("[OpenAI] Empty content received! Finish reason:", response.choices[0].finish_reason);
+        throw new Error(`OpenAI returned empty content. Finish reason: ${response.choices[0].finish_reason}`);
+      }
+
       return {
-        content: response.choices[0].message.content || "",
+        content,
         tokens: response.usage?.total_tokens || 0,
       };
     } catch (error) {
-      console.error("OpenAI chat completion error:", error);
+      console.error("[OpenAI] Chat completion error:", error);
       throw new Error(`Failed to complete chat: ${error.message}`);
     }
   }
