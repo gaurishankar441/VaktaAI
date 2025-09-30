@@ -34,8 +34,45 @@ export class PineconeService {
       });
 
       console.log("Pinecone client initialized successfully");
+      
+      // Ensure index exists
+      await this.ensureIndexExists();
     } catch (error) {
       console.error("Failed to initialize Pinecone client:", error);
+    }
+  }
+
+  private async ensureIndexExists(): Promise<void> {
+    if (!this.client) return;
+
+    try {
+      const indexes = await this.client.listIndexes();
+      const indexExists = indexes.indexes?.some(idx => idx.name === this.indexName);
+
+      if (!indexExists) {
+        console.log(`Creating Pinecone index: ${this.indexName}`);
+        await this.client.createIndex({
+          name: this.indexName,
+          dimension: 1536, // OpenAI text-embedding-3-small dimension
+          metric: 'cosine',
+          spec: {
+            serverless: {
+              cloud: 'aws',
+              region: 'us-east-1'
+            }
+          }
+        });
+        
+        // Wait for index to be ready
+        console.log("Waiting for index to be ready...");
+        await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds
+        console.log(`Pinecone index ${this.indexName} created successfully`);
+      } else {
+        console.log(`Pinecone index ${this.indexName} already exists`);
+      }
+    } catch (error) {
+      console.error("Failed to ensure Pinecone index exists:", error);
+      // Don't throw - allow the service to continue with degraded functionality
     }
   }
 
