@@ -289,17 +289,28 @@ export class DocumentProcessorService {
         throw new Error("Invalid YouTube URL");
       }
 
-      // Use youtubei.js to get video metadata
-      const Innertube = (await import('youtubei.js')).default;
-      const youtube = await Innertube.create();
-      const videoInfo = await youtube.getInfo(videoId);
+      let title = 'Unknown Title';
+      let authorName = 'Unknown Author';
+      let duration = 0;
+      let description = '';
 
-      const title = videoInfo.basic_info.title || 'Unknown Title';
-      // Author is an object in youtubei.js, extract name
-      const authorName = (videoInfo.basic_info.author as any)?.name || 
-                        String(videoInfo.basic_info.author) || 
-                        'Unknown Author';
-      const duration = videoInfo.basic_info.duration || 0;
+      // Try to get video metadata using youtubei.js
+      try {
+        const Innertube = (await import('youtubei.js')).default;
+        const youtube = await Innertube.create();
+        const videoInfo = await youtube.getInfo(videoId);
+
+        title = videoInfo.basic_info.title || 'Unknown Title';
+        // Author is an object in youtubei.js, extract name
+        authorName = (videoInfo.basic_info.author as any)?.name || 
+                          String(videoInfo.basic_info.author) || 
+                          'Unknown Author';
+        duration = videoInfo.basic_info.duration || 0;
+        description = videoInfo.basic_info.short_description || '';
+      } catch (metadataError) {
+        console.warn("Failed to fetch YouTube metadata, using fallback:", metadataError);
+        // Continue with default values
+      }
 
       // Try to get transcript using youtube-transcript
       let transcript = '';
@@ -314,8 +325,13 @@ export class DocumentProcessorService {
       } catch (transcriptError) {
         console.warn("Failed to fetch YouTube transcript:", transcriptError);
         // Fallback: use video description if transcript is not available
-        transcript = videoInfo.basic_info.short_description || 
-                    'Transcript not available for this video. This video may not have captions enabled.';
+        transcript = description || 
+                    `Transcript not available for video: ${title}. This video may not have captions enabled or may have extraction restrictions.`;
+      }
+
+      // Ensure we have some content to process
+      if (!transcript || transcript.trim().length === 0) {
+        transcript = `YouTube video: ${title} by ${authorName}. No transcript available. ${description ? 'Description: ' + description : 'No description available.'}`;
       }
 
       return {

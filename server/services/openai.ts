@@ -26,6 +26,16 @@ export interface StreamingChatOptions {
 export class OpenAIService {
   async createEmbedding(text: string): Promise<EmbeddingResult> {
     try {
+      // Validate input text
+      if (!text || text.trim().length === 0) {
+        console.warn("Empty text provided for embedding");
+        // Return a zero vector for empty text
+        return {
+          embedding: new Array(1536).fill(0), // text-embedding-3-small has 1536 dimensions
+          tokens: 0,
+        };
+      }
+      
       const response = await openai.embeddings.create({
         model: "text-embedding-3-small",
         input: text,
@@ -44,15 +54,24 @@ export class OpenAIService {
 
   async createBatchEmbeddings(texts: string[]): Promise<EmbeddingResult[]> {
     try {
+      // Filter out empty or whitespace-only texts
+      const validTexts = texts.filter(text => text && text.trim().length > 0);
+      
+      // Return empty results if no valid texts
+      if (validTexts.length === 0) {
+        console.warn("No valid texts provided for batch embeddings");
+        return [];
+      }
+      
       const response = await openai.embeddings.create({
         model: "text-embedding-3-small",
-        input: texts,
+        input: validTexts,
         encoding_format: "float",
       });
 
       return response.data.map((item, index) => ({
         embedding: item.embedding,
-        tokens: Math.floor((response.usage?.total_tokens || 0) / texts.length),
+        tokens: Math.floor((response.usage?.total_tokens || 0) / validTexts.length),
       }));
     } catch (error) {
       console.error("OpenAI batch embedding error:", error);

@@ -90,11 +90,18 @@ export class PineconeService {
       const index = this.client.index(this.indexName);
       const ns = namespace ? index.namespace(namespace) : index;
 
+      // Filter out null/undefined values from metadata
+      const cleanMetadata = Object.fromEntries(
+        Object.entries(metadata).filter(([_, value]) => 
+          value !== null && value !== undefined
+        )
+      );
+
       await ns.upsert([
         {
           id,
           values: embedding,
-          metadata,
+          metadata: cleanMetadata,
         },
       ]);
     } catch (error) {
@@ -123,11 +130,20 @@ export class PineconeService {
       for (let i = 0; i < vectors.length; i += batchSize) {
         const batch = vectors.slice(i, i + batchSize);
         await ns.upsert(
-          batch.map(vector => ({
-            id: vector.id,
-            values: vector.embedding,
-            metadata: vector.metadata,
-          }))
+          batch.map(vector => {
+            // Filter out null/undefined values from metadata
+            const cleanMetadata = Object.fromEntries(
+              Object.entries(vector.metadata).filter(([_, value]) => 
+                value !== null && value !== undefined
+              )
+            );
+            
+            return {
+              id: vector.id,
+              values: vector.embedding,
+              metadata: cleanMetadata,
+            };
+          })
         );
       }
     } catch (error) {

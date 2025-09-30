@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { NoteEditor } from "@/components/notes/NoteEditor";
+import { queryClient } from "@/lib/queryClient";
 import { NoteTemplateSelector } from "@/components/notes/NoteTemplateSelector";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -98,6 +99,8 @@ export default function Notes() {
     // Refresh notes list and close editor
     setSelectedNote(null);
     setSelectedTemplate("");
+    // Invalidate cache to refresh note list with updated word count
+    queryClient.invalidateQueries({ queryKey: ['/api/notes'] });
   };
 
   const handleCloseEditor = () => {

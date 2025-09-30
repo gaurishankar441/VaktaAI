@@ -41,8 +41,18 @@ export function ChatMessage({ message, isStreaming = false }: ChatMessageProps) 
   };
 
   const renderContent = (content: string) => {
-    // Simple markdown-like rendering for basic formatting
-    return content
+    // Escape HTML to prevent XSS attacks
+    const escapeHtml = (text: string) => {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    };
+    
+    // First escape all HTML, then apply safe markdown transformations
+    const escaped = escapeHtml(content);
+    
+    // Apply markdown transformations safely
+    return escaped
       .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
       .replace(/\*(.*?)\*/g, '<em>$1</em>')
       .replace(/`(.*?)`/g, '<code class="bg-muted px-1 py-0.5 rounded text-sm">$1</code>')
