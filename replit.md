@@ -133,6 +133,82 @@ The backend uses a clean service-oriented architecture separating concerns:
 
 **Rationale:** This pipeline balances retrieval quality with performance. Pinecone provides fast vector search at scale. Cohere reranking significantly improves relevance over pure vector similarity. GPT-5 streaming provides responsive UX.
 
+### Agentic RAG with Claim Verification
+
+**Last Updated:** September 30, 2025
+
+VaktaAI now includes an advanced **Agentic RAG system** that automatically verifies factual claims in AI responses using web sources. This transforms the platform from simple document chat into an intelligent system that validates its own outputs.
+
+**Architecture:**
+
+The agentic system implements a **stateful ReAct loop** (Reason-Act-Observe-Reflect):
+1. **Extract Claims**: Parse AI response for factual claims requiring verification
+2. **Think**: Plan verification strategy based on claim + history + available sources
+3. **Act**: Execute action (web search, fetch URL, or conclude)
+4. **Observe**: Analyze results and store in history
+5. **Reflect**: Make final assessment with all gathered evidence
+
+**Components:**
+
+1. **Agent Orchestrator** (`server/agent/orchestrator.ts`)
+   - Stateful ReAct loop with cumulative history
+   - Manages tool execution and observation storage
+   - Coordinates Think→Act→Observe→Reflect cycle
+   - IP pinning per iteration to prevent DNS rebinding
+
+2. **Web Search Tool** (`server/agent/tools/webSearch.ts`)
+   - Multi-provider support: Tavily (recommended), Bing, SerpAPI
+   - Rate limiting: 30 requests/minute per user
+   - In-memory caching: 20-minute TTL
+   - Returns URLs with titles, snippets, and relevance scores
+
+3. **Web Fetch Tool** (`server/agent/tools/webFetch.ts`)
+   - Production-ready SSRF protection (see Security section)
+   - HTTPS-only, port allowlist (443 default)
+   - DNS resolution with IP pinning via undici custom Agent
+   - Per-hop validation for redirects (max 2)
+   - Size limits (10MB) and timeouts (10s total, 5s connect)
+   - Content-Type validation (text/html, text/plain, application/json)
+
+4. **Verification UI** (`client/src/components/chat/VerificationSummary.tsx`)
+   - Claim status badges (Supported/Contradicted/Uncertain)
+   - Confidence scores with color coding
+   - Expandable accordion with reasoning and sources
+   - External links to web sources with snippets
+
+**API Endpoint:**
+
+```
+POST /api/chat/verify-claims
+Body: { responseText: string }
+Response: {
+  claims: Claim[],
+  verifications: VerificationResult[],
+  summary: string
+}
+```
+
+**Security Features:**
+
+**DNS Rebinding TOCTOU Prevention:**
+- Pre-request DNS resolution validates ALL resolved IPs
+- Custom undici Agent with controlled DNS lookup returns ONLY validated IPs
+- Per-hop validation: Each redirect triggers fresh DNS resolution and IP re-pinning
+- No trust in external DNS between validation and connection
+
+**Private IP Blocking:**
+- Comprehensive IPv4/IPv6 blocklist (RFC 1918, link-local, loopback, etc.)
+- IPv6-mapped IPv4 normalization (e.g., `::ffff:127.0.0.1` → `127.0.0.1`)
+- Explicit `localhost` blocking
+
+**Resource Protection:**
+- Size limits with streaming enforcement
+- Total and connect timeouts
+- Rate limiting per user
+- Manual redirect following with validation
+
+**Rationale:** Agentic RAG enables VaktaAI to self-verify claims against current web sources, reducing hallucinations and increasing trustworthiness. The stateful ReAct loop allows proper decision-making based on previous observations. SSRF protections ensure the agent can't be exploited to access internal services.
+
 ### Authentication & Authorization
 
 **Strategy:** Replit Auth (OpenID Connect) with session-based authentication
