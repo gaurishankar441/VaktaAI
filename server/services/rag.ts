@@ -147,7 +147,7 @@ export class RAGService {
           [
             {
               role: "system",
-              content: "You are DocChatAssistant. Use only the provided context to answer questions with proper citations."
+              content: "You are DocChatAssistant. Use only the provided context to answer questions with proper citations. Always respond in valid JSON format with keys: answer (string) and takeaways (array of strings)."
             },
             {
               role: "user",
@@ -160,11 +160,21 @@ export class RAGService {
           }
         );
 
-        const parsedResponse = JSON.parse(response.content);
+        // Try to parse JSON, fallback to plain text if it fails
+        let parsedResponse;
+        try {
+          parsedResponse = JSON.parse(response.content);
+        } catch (parseError) {
+          console.warn("Failed to parse OpenAI response as JSON, using plain text:", parseError);
+          parsedResponse = {
+            answer: response.content,
+            takeaways: []
+          };
+        }
         
         return {
-          answer: parsedResponse.answer || response.content,
-          takeaways: parsedResponse.takeaways || [],
+          answer: parsedResponse.answer || response.content || "No answer generated.",
+          takeaways: Array.isArray(parsedResponse.takeaways) ? parsedResponse.takeaways : [],
           citations: includedCitations,
           tokensUsed: response.tokens,
         };

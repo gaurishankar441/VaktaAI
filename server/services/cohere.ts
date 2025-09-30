@@ -58,6 +58,12 @@ export class CohereService {
   async rerankChunks(query: string, chunks: any[], topK: number = 8): Promise<any[]> {
     if (chunks.length === 0) return [];
 
+    // Skip reranking if API key is missing or invalid
+    if (!this.apiKey || this.apiKey === "default_key") {
+      console.warn("Cohere API key not configured, skipping reranking");
+      return chunks.slice(0, topK);
+    }
+
     try {
       const results = await this.rerank({
         query,

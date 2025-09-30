@@ -289,9 +289,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { query, documentIds, threadId, streaming = false } = req.body;
 
+      console.log("[Chat Query] Received query:", { query, documentIds, threadId, streaming });
+
       // Validate thread exists
       const thread = await storage.getChatThread(threadId);
       if (!thread) {
+        console.error("[Chat Query] Thread not found:", threadId);
         return res.status(400).json({ 
           message: "Thread not found. Please create a thread first." 
         });
@@ -303,12 +306,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         role: 'user',
         content: query,
       });
+      console.log("[Chat Query] User message saved");
 
       // Get RAG context
+      console.log("[Chat Query] Retrieving context...");
       const context = await ragService.retrieveContext(query, documentIds);
+      console.log("[Chat Query] Context retrieved, chunks:", context.chunks.length);
 
       if (streaming) {
         // Generate streaming response
+        console.log("[Chat Query] Generating streaming response...");
         await ragService.generateResponse(
           query,
           context,
@@ -316,7 +323,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         );
       } else {
         // Generate regular response
+        console.log("[Chat Query] Generating response...");
         const response = await ragService.generateResponse(query, context);
+        console.log("[Chat Query] Response generated:", { answerLength: response.answer.length, citations: response.citations.length });
 
         // Save assistant message
         await storage.createChatMessage({
@@ -325,12 +334,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
           content: response.answer,
           citations: response.citations,
         });
+        console.log("[Chat Query] Assistant message saved");
 
         res.json(response);
       }
     } catch (error) {
-      console.error("Error processing chat query:", error);
-      res.status(500).json({ message: "Failed to process query" });
+      console.error("[Chat Query] Error processing chat query:", error);
+      res.status(500).json({ message: "Failed to process query", error: error.message });
     }
   });
 
