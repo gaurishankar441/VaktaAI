@@ -33,6 +33,7 @@ export function ChatInterface({ threadId, documentIds }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState("");
+  const [transcriptSearch, setTranscriptSearch] = useState("");
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
@@ -40,6 +41,11 @@ export function ChatInterface({ threadId, documentIds }: ChatInterfaceProps) {
   const { data: threadMessages } = useQuery({
     queryKey: ['/api/chat/threads', threadId, 'messages'],
     enabled: !!threadId,
+  });
+
+  // Fetch document details to check for YouTube videos
+  const { data: documents } = useQuery({
+    queryKey: ['/api/documents'],
   });
 
   useEffect(() => {
@@ -182,6 +188,52 @@ export function ChatInterface({ threadId, documentIds }: ChatInterfaceProps) {
     }
   };
 
+  // Find YouTube videos in the current documents
+  const selectedDocuments = documents?.filter((doc: any) => documentIds.includes(doc.id)) || [];
+  const youtubeDoc = selectedDocuments.find((doc: any) => doc.sourceType === 'youtube');
+  
+  // Extract YouTube video ID
+  const getYouTubeId = (url: string): string => {
+    const patterns = [
+      /(?:youtube\.com\/watch\?v=)([^&\n?#]+)/,
+      /(?:youtu\.be\/)([^&\n?#]+)/,
+      /(?:youtube\.com\/embed\/)([^&\n?#]+)/,
+      /(?:youtube\.com\/shorts\/)([^&\n?#]+)/,
+      /(?:youtube\.com\/live\/)([^&\n?#]+)/,
+      /(?:m\.youtube\.com\/watch\?v=)([^&\n?#]+)/,
+    ];
+    
+    for (const pattern of patterns) {
+      const match = url?.match(pattern);
+      if (match) return match[1];
+    }
+    return '';
+  };
+
+  // Get video ID from metadata first, fallback to URL parsing
+  const getDocumentVideoId = (doc: any): string => {
+    return doc.metadata?.videoId || getYouTubeId(doc.sourceUrl || '');
+  };
+
+  const youtubeVideoId = youtubeDoc ? getDocumentVideoId(youtubeDoc) : '';
+
+  // Parse transcript from document metadata
+  const getTranscript = () => {
+    if (!youtubeDoc?.metadata?.transcript) return [];
+    
+    // Parse transcript text with timestamps
+    const transcriptText = youtubeDoc.metadata.transcript;
+    const timestampRegex = /\[(\d+:\d+(?::\d+)?)\]\s*([^\[]+)/g;
+    const matches = [...transcriptText.matchAll(timestampRegex)];
+    
+    return matches.map(match => ({
+      timestamp: match[1],
+      text: match[2].trim()
+    }));
+  };
+
+  const transcript = getTranscript();
+
   return (
     <div className="h-full flex">
       {/* Sources Panel */}
@@ -192,19 +244,33 @@ export function ChatInterface({ threadId, documentIds }: ChatInterfaceProps) {
         </div>
         <ScrollArea className="flex-1 p-4">
           <div className="space-y-3">
-            {documentIds.map((docId, index) => (
-              <Card key={docId} className="p-3 hover:bg-accent cursor-pointer">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 bg-red-100 dark:bg-red-900/20 rounded flex items-center justify-center">
-                    <div className="w-4 h-4 bg-red-600 rounded-sm"></div>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm truncate">Document {index + 1}</p>
-                    <p className="text-xs text-muted-foreground">Active</p>
-                  </div>
-                </div>
-              </Card>
-            ))}
+            {selectedDocuments.map((doc: any, index: number) => {
+              const docVideoId = doc.sourceType === 'youtube' ? getDocumentVideoId(doc) : '';
+              return (
+                <Card key={doc.id} className="p-3 hover:bg-accent cursor-pointer">
+                  {doc.sourceType === 'youtube' && docVideoId ? (
+                    <div className="space-y-2">
+                      <img 
+                        src={`https://img.youtube.com/vi/${docVideoId}/hqdefault.jpg`}
+                        alt={doc.title}
+                        className="w-full rounded"
+                      />
+                      <p className="text-xs truncate">{doc.sourceUrl}</p>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-red-100 dark:bg-red-900/20 rounded flex items-center justify-center">
+                        <div className="w-4 h-4 bg-red-600 rounded-sm"></div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm truncate">{doc.title}</p>
+                        <p className="text-xs text-muted-foreground">Active</p>
+                      </div>
+                    </div>
+                  )}
+                </Card>
+              );
+            })}
           </div>
         </ScrollArea>
         <div className="p-4 border-t border-border">
@@ -225,6 +291,58 @@ export function ChatInterface({ threadId, documentIds }: ChatInterfaceProps) {
           <h2 className="font-semibold">Document Chat</h2>
           <p className="text-sm text-muted-foreground">Ask questions about your documents</p>
         </div>
+        
+        {/* YouTube Video Player and Transcript */}
+        {youtubeVideoId && (
+          <div className="border-b border-border">
+            <div className="p-4">
+              <div className="aspect-video bg-black rounded-lg overflow-hidden">
+                <iframe
+                  width="100%"
+                  height="100%"
+                  src={`https://www.youtube.com/embed/${youtubeVideoId}`}
+                  title="YouTube video player"
+                  frameBorder="0"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                  data-testid="youtube-player"
+                />
+              </div>
+            </div>
+            
+            {/* Transcript Section */}
+            {transcript.length > 0 && (
+              <div className="p-4 border-t border-border">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-semibold">Transcript</h3>
+                  <Input
+                    type="text"
+                    placeholder="Search for keywords in transcript..."
+                    value={transcriptSearch}
+                    onChange={(e) => setTranscriptSearch(e.target.value)}
+                    className="max-w-xs"
+                    data-testid="input-transcript-search"
+                  />
+                </div>
+                <ScrollArea className="h-48 border rounded-lg p-3">
+                  <div className="space-y-3">
+                    {transcript
+                      .filter(item => 
+                        !transcriptSearch || 
+                        item.text.toLowerCase().includes(transcriptSearch.toLowerCase())
+                      )
+                      .map((item, idx) => (
+                        <div key={idx} className="text-sm">
+                          <span className="text-primary font-mono text-xs mr-2">{item.timestamp}</span>
+                          <span className="text-muted-foreground">{item.text}</span>
+                        </div>
+                      ))}
+                  </div>
+                </ScrollArea>
+              </div>
+            )}
+          </div>
+        )}
         
         {/* Messages */}
         <ScrollArea className="flex-1 p-4" ref={scrollAreaRef}>

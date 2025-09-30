@@ -341,6 +341,7 @@ export class DocumentProcessorService {
           title,
           author: authorName,
           duration,
+          transcript: transcript,
           extractedAt: new Date().toISOString(),
           method: 'youtube_transcript_api'
         }
