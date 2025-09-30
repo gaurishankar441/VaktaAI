@@ -3,6 +3,7 @@ import { embeddingService } from './embeddings.js';
 import { storage } from '../storage.js';
 import type { Document, InsertDocument, InsertChunk, File } from '@shared/schema';
 import { ObjectStorageService } from '../objectStorage.js';
+import pdfParse from 'pdf-parse';
 
 export interface ProcessingResult {
   document: Document;
