@@ -200,24 +200,49 @@ export class DocumentProcessorService {
   }
 
   private async extractFromPDF(url: string): Promise<{ text: string; metadata: any }> {
-    // In a real implementation, this would use libraries like pdf-parse or pdf2pic
-    // For now, we'll simulate the extraction
-    console.log("Extracting from PDF:", url);
+    console.log("[PDF] Extracting from PDF:", url);
     
-    // Simulate PDF text extraction
-    // In production, you would use libraries like:
-    // - pdf-parse for text extraction
-    // - pdf2pic for image extraction
-    // - or external services like AWS Textract
-    
-    return {
-      text: "Simulated PDF content extraction. In production, this would use pdf-parse or similar libraries to extract text from the PDF file.",
-      metadata: {
-        pages: 10,
-        extractedAt: new Date().toISOString(),
-        method: 'simulated_pdf_extraction'
+    try {
+      // Import pdf-parse dynamically
+      const pdfParse = (await import('pdf-parse')).default;
+      
+      // Fetch the PDF file
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch PDF: ${response.status} ${response.statusText}`);
       }
-    };
+      
+      // Get the PDF as a buffer
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      
+      console.log("[PDF] Parsing PDF buffer, size:", buffer.length);
+      
+      // Parse the PDF
+      const data = await pdfParse(buffer);
+      
+      console.log("[PDF] Extracted text length:", data.text.length);
+      console.log("[PDF] Number of pages:", data.numpages);
+      console.log("[PDF] Preview:", data.text.substring(0, 200));
+      
+      if (!data.text || data.text.trim().length === 0) {
+        throw new Error("No text could be extracted from PDF");
+      }
+      
+      return {
+        text: data.text,
+        metadata: {
+          pages: data.numpages,
+          info: data.info,
+          extractedAt: new Date().toISOString(),
+          method: 'pdf-parse',
+          version: data.version
+        }
+      };
+    } catch (error) {
+      console.error("[PDF] Extraction failed:", error);
+      throw new Error(`Failed to extract PDF content: ${error.message}`);
+    }
   }
 
   private async extractFromPPTX(url: string): Promise<{ text: string; metadata: any }> {
