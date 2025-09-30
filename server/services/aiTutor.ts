@@ -68,7 +68,8 @@ export class AITutorService {
     sessionId: string,
     content: string,
     role: 'user' | 'tutor' = 'user',
-    messageType?: string
+    messageType?: string,
+    orchestrationData?: any
   ): Promise<TutorMessage> {
     try {
       const messageData: InsertTutorMessage = {
@@ -76,6 +77,7 @@ export class AITutorService {
         role,
         content,
         messageType: role === 'user' ? undefined : (messageType || 'explanation'),
+        orchestrationData: orchestrationData || undefined,
       };
 
       return await storage.createTutorMessage(messageData);
@@ -113,12 +115,13 @@ export class AITutorService {
         session.gradeLevel
       );
 
-      // Save tutor response with correct messageType
+      // Save tutor response with correct messageType AND orchestrationData
       await this.sendTutorMessage(
         sessionId, 
         orchestrationResult.response, 
         'tutor', 
-        orchestrationResult.messageType
+        orchestrationResult.messageType,
+        orchestrationResult // Pass full orchestration result as orchestrationData
       );
 
       // Map orchestration result to TutorResponse format
@@ -163,12 +166,13 @@ export class AITutorService {
         session.topic
       );
 
-      // Save feedback with correct messageType
+      // Save feedback with correct messageType AND orchestrationData
       await this.sendTutorMessage(
         sessionId, 
         feedbackResult.response, 
         'tutor', 
-        feedbackResult.messageType
+        feedbackResult.messageType,
+        feedbackResult // Pass full feedback result as orchestrationData
       );
 
       return {
