@@ -1,6 +1,52 @@
-node_modules
-dist
+# Dependencies
+node_modules/
+
+# Production
+dist/
+build/
+
+# OS files
 .DS_Store
+Thumbs.db
+
+# Server generated
 server/public
+
+# Vite config temporary files
 vite.config.ts.*
+
+# Archives
 *.tar.gz
+*.zip
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# TypeScript
+*.tsbuildinfo
+
+# Temporary files
+tmp/
+temp/
+
+# Sessions
+sessions/
+
+# Replit specific (if needed to ignore)
+# .replit
+# replit.nix
