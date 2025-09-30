@@ -477,20 +477,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { content, streaming = false } = req.body;
       const sessionId = req.params.id;
-
-      // Save user message
-      await aiTutorService.sendTutorMessage(sessionId, content, 'user');
+      const userId = req.user.claims.sub;
 
       if (streaming) {
-        // Generate streaming response
-        await aiTutorService.generateTutorResponse(
-          sessionId,
-          content,
-          { streaming: true, res }
-        );
+        // Note: Streaming not yet implemented with agentic orchestrator
+        return res.status(501).json({ message: "Streaming not implemented in agentic mode" });
       } else {
-        // Generate regular response
-        const response = await aiTutorService.generateTutorResponse(sessionId, content);
+        // Generate agentic response using SessionOrchestrator
+        const response = await aiTutorService.generateTutorResponse(
+          sessionId, 
+          content,
+          { userId, streaming: false }
+        );
         res.json(response);
       }
     } catch (error) {
@@ -499,18 +497,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/tutor/sessions/:id/feedback', isAuthenticated, async (req: any, res) => {
+  app.post('/api/tutor/sessions/:id/answer', isAuthenticated, async (req: any, res) => {
     try {
-      const { studentAnswer, correctAnswer } = req.body;
-      const feedback = await aiTutorService.provideFeedback(
-        req.params.id,
+      const { studentAnswer } = req.body;
+      const sessionId = req.params.id;
+      const userId = req.user.claims.sub;
+
+      // Process answer with agentic feedback using SessionOrchestrator
+      const feedback = await aiTutorService.processTutorAnswer(
+        sessionId,
         studentAnswer,
-        correctAnswer
+        userId
       );
-      res.json({ feedback });
+      res.json(feedback);
     } catch (error) {
-      console.error("Error providing feedback:", error);
-      res.status(500).json({ message: "Failed to provide feedback" });
+      console.error("Error processing answer:", error);
+      res.status(500).json({ message: "Failed to process answer" });
     }
   });
 

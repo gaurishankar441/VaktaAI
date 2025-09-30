@@ -1,12 +1,14 @@
 import { openaiService } from './openai.js';
 import { storage } from '../storage.js';
+import { sessionOrchestrator, type OrchestrationResult } from '../tutor/sessionOrchestrator.js';
 import type { TutorSession, TutorMessage, InsertTutorSession, InsertTutorMessage } from '@shared/schema';
 
 export interface TutorResponse {
   explanation: string;
   worked_example: string;
   practice_prompt: string;
-  messageType: 'explanation' | 'worked_example' | 'practice' | 'feedback';
+  messageType: 'explanation' | 'worked_example' | 'practice' | 'feedback' | 'lesson_plan' | 'socratic_probe' | 'administrative';
+  orchestrationData?: OrchestrationResult;
 }
 
 export interface TutorSessionData {
@@ -65,14 +67,15 @@ export class AITutorService {
   async sendTutorMessage(
     sessionId: string,
     content: string,
-    role: 'user' | 'tutor' = 'user'
+    role: 'user' | 'tutor' = 'user',
+    messageType?: string
   ): Promise<TutorMessage> {
     try {
       const messageData: InsertTutorMessage = {
         sessionId,
         role,
         content,
-        messageType: role === 'user' ? undefined : 'explanation',
+        messageType: role === 'user' ? undefined : (messageType || 'explanation'),
       };
 
       return await storage.createTutorMessage(messageData);
@@ -88,7 +91,8 @@ export class AITutorService {
     options: {
       streaming?: boolean;
       res?: any;
-    } = {}
+      userId: string;
+    }
   ): Promise<TutorResponse> {
     try {
       const session = await storage.getTutorSession(sessionId);
@@ -96,71 +100,86 @@ export class AITutorService {
         throw new Error("Tutor session not found");
       }
 
-      const messages = await storage.getTutorMessages(sessionId);
-      const conversationHistory = this.buildConversationHistory(messages);
+      // Save user message
+      await this.sendTutorMessage(sessionId, userQuestion, 'user');
 
-      const prompt = this.buildTutorPrompt(
-        session.gradeLevel,
+      // Use SessionOrchestrator for agentic response
+      const orchestrationResult = await sessionOrchestrator.orchestrate(
+        options.userId,
+        sessionId,
+        userQuestion,
         session.subject,
         session.topic,
-        userQuestion,
-        conversationHistory
+        session.gradeLevel
       );
 
-      if (options.streaming && options.res) {
-        await this.generateStreamingTutorResponse(prompt, options.res);
-        return {
-          explanation: "Streaming response in progress",
-          worked_example: "",
-          practice_prompt: "",
-          messageType: 'explanation',
-        };
-      } else {
-        // Calculate optimal max_tokens for JSON response
-        // AI Tutor responses include: explanation, worked_example, practice_prompt
-        // Typical response: 1500-2500 tokens + JSON structure overhead
-        // Apply aggressive 3-layer token allocation strategy:
-        // 1. Base allocation: 3000 tokens (comprehensive pedagogical content)
-        // 2. Context boost: +1000 tokens (detailed worked examples)
-        // 3. Estimation buffer: 20% (JSON format + completion safety)
-        const baseAllocation = 3000;
-        const contextBoost = 1000;
-        const estimationBuffer = Math.ceil((baseAllocation + contextBoost) * 0.20);
-        const calculatedMaxTokens = baseAllocation + contextBoost + estimationBuffer;
-        
-        console.log(`[AI Tutor] Allocating ${calculatedMaxTokens} tokens for response (base: ${baseAllocation}, boost: ${contextBoost}, buffer: ${estimationBuffer})`);
+      // Save tutor response with correct messageType
+      await this.sendTutorMessage(
+        sessionId, 
+        orchestrationResult.response, 
+        'tutor', 
+        orchestrationResult.messageType
+      );
 
-        const response = await openaiService.chatCompletion(
-          [
-            {
-              role: "system",
-              content: "You are AIPedagogyTutor, an expert educator who provides structured learning experiences."
-            },
-            {
-              role: "user",
-              content: prompt
-            }
-          ],
-          {
-            responseFormat: { type: "json_object" },
-            maxTokens: calculatedMaxTokens,
-          }
-        );
-
-        const parsed = JSON.parse(response.content);
-        
-        // Save the tutor response
-        await this.sendTutorMessage(sessionId, JSON.stringify(parsed), 'tutor');
-
-        return {
-          explanation: parsed.explanation || "",
-          worked_example: parsed.worked_example || "",
-          practice_prompt: parsed.practice_prompt || "",
-          messageType: 'explanation',
-        };
-      }
+      // Map orchestration result to TutorResponse format
+      return {
+        explanation: orchestrationResult.response,
+        worked_example: orchestrationResult.lessonPlan ? 
+          `Lesson Plan created with ${orchestrationResult.lessonPlan.steps.length} steps` : '',
+        practice_prompt: orchestrationResult.probe ? 
+          orchestrationResult.probe.probe.hint || '' : '',
+        messageType: orchestrationResult.messageType,
+        orchestrationData: orchestrationResult
+      };
     } catch (error) {
       console.error("Failed to generate tutor response:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Process student answer and provide feedback
+   */
+  async processTutorAnswer(
+    sessionId: string,
+    studentAnswer: string,
+    userId: string
+  ): Promise<TutorResponse> {
+    try {
+      const session = await storage.getTutorSession(sessionId);
+      if (!session) {
+        throw new Error("Tutor session not found");
+      }
+
+      // Save student answer
+      await this.sendTutorMessage(sessionId, studentAnswer, 'user');
+
+      // Process answer with feedback
+      const feedbackResult = await sessionOrchestrator.processAnswer(
+        userId,
+        sessionId,
+        studentAnswer,
+        session.subject,
+        session.topic
+      );
+
+      // Save feedback with correct messageType
+      await this.sendTutorMessage(
+        sessionId, 
+        feedbackResult.response, 
+        'tutor', 
+        feedbackResult.messageType
+      );
+
+      return {
+        explanation: feedbackResult.response,
+        worked_example: feedbackResult.feedback?.taskFeedback || '',
+        practice_prompt: feedbackResult.feedback?.nextMicroStep || '',
+        messageType: feedbackResult.messageType,
+        orchestrationData: feedbackResult
+      };
+    } catch (error) {
+      console.error("Failed to process tutor answer:", error);
       throw error;
     }
   }
