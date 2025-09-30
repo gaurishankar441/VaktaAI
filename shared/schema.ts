@@ -451,6 +451,10 @@ export const upsertUserSchema = createInsertSchema(users).pick({
 export const insertSettingsSchema = createInsertSchema(settings).omit({
   createdAt: true,
   updatedAt: true,
+}).extend({
+  temperature: z.union([z.string(), z.number()]).optional().transform(val => 
+    val !== undefined ? String(val) : undefined
+  ),
 });
 
 export const insertFolderSchema = createInsertSchema(folders).omit({
