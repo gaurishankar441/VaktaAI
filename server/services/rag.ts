@@ -9,9 +9,17 @@ export interface RAGContext {
   citations: Array<{
     chunkId: string;
     source: string;
+    documentId: string;
+    documentTitle?: string;
     page?: number;
     time?: number;
     relevanceScore?: number;
+  }>;
+  documentSources?: Array<{
+    documentId: string;
+    title: string;
+    relevanceScore: number;
+    chunkCount: number;
   }>;
 }
 
@@ -45,7 +53,7 @@ export class RAGService {
       );
 
       if (candidateChunks.length === 0) {
-        return { chunks: [], citations: [] };
+        return { chunks: [], citations: [], documentSources: [] };
       }
 
       // Step 2: Rerank with Cohere
@@ -55,22 +63,53 @@ export class RAGService {
         topK
       );
 
-      // Step 3: Filter overlapping chunks and build citations
+      // Step 3: Filter overlapping chunks and build citations with document metadata
       const finalChunks = this.filterOverlappingChunks(rerankedChunks.slice(0, topK));
+      
+      // Get document metadata for richer citations (only for documents that appear in finalChunks)
+      const uniqueDocIds = Array.from(new Set(finalChunks.map(c => c.documentId)));
+      const documentMetadata = new Map();
+      await Promise.all(
+        uniqueDocIds.map(async (documentId) => {
+          const doc = await storage.getDocument(documentId);
+          if (doc) {
+            documentMetadata.set(documentId, doc);
+          }
+        })
+      );
+      
       const citations = finalChunks.map(chunk => {
-        const document = documentIds.find(id => chunk.documentId === id);
+        const doc = documentMetadata.get(chunk.documentId);
         return {
           chunkId: chunk.id,
-          source: `Document ${chunk.documentId}`,
-          page: chunk.startPage,
+          source: doc?.title || `Document ${chunk.documentId}`,
+          documentId: chunk.documentId,
+          documentTitle: doc?.title,
+          page: chunk.startPage ?? undefined,
           time: chunk.startTime ? parseFloat(chunk.startTime.toString()) : undefined,
           relevanceScore: (chunk as any).relevanceScore,
         };
       });
 
+      // Step 4: Calculate document-level relevance scores
+      const documentScores = this.calculateDocumentRelevance(finalChunks);
+      const documentSources = Array.from(documentScores.entries()).map(([docId, stats]) => ({
+        documentId: docId,
+        title: documentMetadata.get(docId)?.title || `Document ${docId}`,
+        relevanceScore: stats.avgScore,
+        chunkCount: stats.count,
+      })).sort((a, b) => {
+        // Sort by relevance score first, then by chunk count as tie-breaker
+        if (b.relevanceScore !== a.relevanceScore) {
+          return b.relevanceScore - a.relevanceScore;
+        }
+        return b.chunkCount - a.chunkCount;
+      });
+
       return {
         chunks: finalChunks,
         citations,
+        documentSources,
       };
     } catch (error) {
       console.error("Failed to retrieve RAG context:", error);
@@ -86,7 +125,10 @@ export class RAGService {
       res?: any;
     } = {}
   ): Promise<RAGResponse> {
-    const contextText = this.buildContextText(context.chunks);
+    const { text: contextText, includedCount } = this.buildContextTextFromCitations(context.chunks, context.citations);
+    
+    // Only include citations for chunks that were actually included in the context
+    const includedCitations = context.citations.slice(0, includedCount);
     
     const prompt = this.buildRAGPrompt(query, contextText);
 
@@ -97,7 +139,7 @@ export class RAGService {
         return {
           answer: "Streaming response in progress",
           takeaways: [],
-          citations: context.citations,
+          citations: includedCitations,
           tokensUsed: 0,
         };
       } else {
@@ -123,7 +165,7 @@ export class RAGService {
         return {
           answer: parsedResponse.answer || response.content,
           takeaways: parsedResponse.takeaways || [],
-          citations: context.citations,
+          citations: includedCitations,
           tokensUsed: response.tokens,
         };
       }
@@ -151,8 +193,66 @@ export class RAGService {
     await openaiService.createStreamingResponse(messages, res);
   }
 
-  private buildContextText(chunks: Chunk[]): string {
+  private buildContextTextFromCitations(chunks: Chunk[], citations: RAGContext['citations']): { text: string; includedCount: number } {
+    // Use citations which already have document titles
+    // Reserve 2000 tokens for system messages, user query, and completion
+    const TOKEN_HEADROOM = 2000;
+    const effectiveLimit = this.MAX_CONTEXT_LENGTH - TOKEN_HEADROOM;
+    
+    let totalLength = 0;
+    const contextParts: string[] = [];
+    let includedCount = 0;
+    
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      const citation = citations[i];
+      
+      let sourceMeta = "";
+      if (chunk.startPage) {
+        sourceMeta = `page ${chunk.startPage}`;
+        if (chunk.endPage && chunk.endPage !== chunk.startPage) {
+          sourceMeta += `-${chunk.endPage}`;
+        }
+      } else if (chunk.startTime) {
+        const minutes = Math.floor(parseFloat(chunk.startTime.toString()) / 60);
+        const seconds = Math.floor(parseFloat(chunk.startTime.toString()) % 60);
+        sourceMeta = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+      }
+
+      const contextPart = `---
+Source: ${citation.documentTitle || citation.source}${sourceMeta ? `, ${sourceMeta}` : ''}
+Text: ${chunk.text}
+---`;
+
+      // Estimate token count (rough: 1 token ≈ 4 chars)
+      const estimatedTokens = contextPart.length / 4;
+      if (totalLength + estimatedTokens > effectiveLimit) {
+        break; // Stop adding chunks if we exceed max context
+      }
+      
+      contextParts.push(contextPart);
+      totalLength += estimatedTokens;
+      includedCount++;
+    }
+
+    return { text: contextParts.join('\n\n'), includedCount };
+  }
+
+  private async buildContextText(chunks: Chunk[]): Promise<string> {
+    // Get document metadata for titles
+    const documentMetadata = new Map();
+    const uniqueDocIds = Array.from(new Set(chunks.map(c => c.documentId)));
+    for (const documentId of uniqueDocIds) {
+      const doc = await storage.getDocument(documentId);
+      if (doc) {
+        documentMetadata.set(documentId, doc);
+      }
+    }
+
     return chunks.map((chunk, index) => {
+      const doc = documentMetadata.get(chunk.documentId);
+      const docTitle = doc?.title || `Document ${chunk.documentId}`;
+      
       let sourceMeta = "";
       if (chunk.startPage) {
         sourceMeta = `page ${chunk.startPage}`;
@@ -166,7 +266,7 @@ export class RAGService {
       }
 
       return `---
-Source: Document ${chunk.documentId}, ${sourceMeta}
+Source: ${docTitle}${sourceMeta ? `, ${sourceMeta}` : ''}
 Text: ${chunk.text}
 ---`;
     }).join('\n\n');
@@ -261,10 +361,39 @@ Output JSON:
     const words1 = new Set(text1.toLowerCase().split(/\s+/));
     const words2 = new Set(text2.toLowerCase().split(/\s+/));
     
-    const intersection = new Set([...words1].filter(x => words2.has(x)));
-    const union = new Set([...words1, ...words2]);
+    const words1Array = Array.from(words1);
+    const intersection = new Set(words1Array.filter(x => words2.has(x)));
+    const union = new Set([...words1Array, ...Array.from(words2)]);
     
     return intersection.size / union.size;
+  }
+
+  private calculateDocumentRelevance(chunks: Chunk[]): Map<string, { avgScore: number; count: number }> {
+    const documentStats = new Map<string, { totalScore: number; count: number }>();
+    
+    for (const chunk of chunks) {
+      const score = (chunk as any).relevanceScore || 0;
+      const existing = documentStats.get(chunk.documentId);
+      
+      if (existing) {
+        existing.totalScore += score;
+        existing.count += 1;
+      } else {
+        documentStats.set(chunk.documentId, { totalScore: score, count: 1 });
+      }
+    }
+    
+    // Convert to average scores
+    const result = new Map<string, { avgScore: number; count: number }>();
+    const entries = Array.from(documentStats.entries());
+    for (const [docId, stats] of entries) {
+      result.set(docId, {
+        avgScore: stats.totalScore / stats.count,
+        count: stats.count,
+      });
+    }
+    
+    return result;
   }
 
   async generateSummary(documentIds: string[]): Promise<{
@@ -281,7 +410,7 @@ Output JSON:
         allChunks.push(...sampleChunks);
       }
 
-      const contextText = this.buildContextText(allChunks);
+      const contextText = await this.buildContextText(allChunks);
       
       const prompt = `Role: DocChatSummarizer
 Input: Retrieved chunks.
@@ -343,7 +472,7 @@ Output JSON format:
         .map(chunk => ({
           text: chunk.text.length > 200 ? chunk.text.substring(0, 200) + "..." : chunk.text,
           source: `Document ${chunk.documentId}`,
-          page: chunk.startPage,
+          page: chunk.startPage ?? undefined,
           time: chunk.startTime ? parseFloat(chunk.startTime.toString()) : undefined,
         }));
 
