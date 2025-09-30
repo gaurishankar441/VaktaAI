@@ -235,7 +235,7 @@ export function TutorInterface({ sessionId, onSessionChange }: TutorInterfacePro
   // Convert tutor messages to chat message format
   const chatMessages = sessionData.messages.map(msg => ({
     id: msg.id,
-    role: msg.role === 'tutor' ? 'assistant' as const : 'user' as const,
+    role: msg.role as 'tutor' | 'user',
     content: msg.content,
     createdAt: msg.createdAt,
   }));

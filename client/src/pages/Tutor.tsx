@@ -26,7 +26,7 @@ export default function Tutor() {
   });
 
   // If session is selected, show tutor interface
-  if (selectedSessionId) {
+  if (selectedSessionId !== null) {
     return (
       <MainLayout>
         <div className="h-screen flex flex-col">
