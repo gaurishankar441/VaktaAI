@@ -159,26 +159,33 @@ export class RAGService {
     
     // IMPORTANT: JSON responses need MORE tokens to complete the JSON structure properly
     // If we hit token limit mid-JSON, OpenAI returns empty content
-    // Base allocation on query complexity (increased for JSON format)
+    // Base allocation on query complexity (increased for JSON format + estimation buffer)
     if (query.length < 50) {
-      desiredResponseTokens = 2500; // Increased from 1500 for JSON overhead
+      desiredResponseTokens = 3000; // Further increased for JSON overhead + tokenizer variance
     } else if (query.length < 150) {
-      desiredResponseTokens = 3500; // Increased from 2500 for JSON overhead
+      desiredResponseTokens = 4000; // Further increased for JSON overhead + tokenizer variance
     } else {
-      desiredResponseTokens = 4500; // Increased from 3500 for JSON overhead
+      desiredResponseTokens = 5000; // Further increased for JSON overhead + tokenizer variance
     }
     
     // Adjust based on context richness (more chunks = potentially more detailed answer)
     if (chunkCount >= 5 && contextTokens > 2000) {
-      desiredResponseTokens += 1000; // Increased from 500
+      desiredResponseTokens += 1000;
     } else if (chunkCount >= 3) {
-      desiredResponseTokens += 500; // Increased from 250
+      desiredResponseTokens += 500;
     }
     
-    // Extra buffer for small contexts to ensure JSON completion
+    // Critical buffer for small contexts + tokenizer estimation variance
+    // Character/4 estimation can be 10-20% off, so add 20% safety margin
     if (chunkCount <= 2) {
-      desiredResponseTokens += 500; // Extra buffer for small contexts
+      desiredResponseTokens += 1000; // Increased buffer for small contexts + estimation error
     }
+    
+    // Add final safety buffer for tokenizer variance (15% of desired tokens)
+    const estimationBuffer = Math.ceil(desiredResponseTokens * 0.15);
+    desiredResponseTokens += estimationBuffer;
+    
+    console.log(`[RAG] Added ${estimationBuffer} token estimation buffer (15% safety margin)`);
     
     // CRITICAL: Strict clamp to prevent exceeding available budget
     // Use Math.min first to ensure we never exceed available, then clamp to minimum 1
