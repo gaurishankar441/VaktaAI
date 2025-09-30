@@ -132,6 +132,33 @@ export class RAGService {
     
     const prompt = this.buildRAGPrompt(query, contextText);
 
+    // Calculate dynamic max tokens based on context size
+    const estimatedInputTokens = Math.ceil((contextText.length + query.length + 200) / 4); // Rough estimate: 4 chars = 1 token
+    const maxContextTokens = 8000; // GPT-5 context limit (approximate)
+    
+    // Reserve tokens for response - scale based on query complexity
+    const queryLength = query.length;
+    let responseTokens: number;
+    
+    if (queryLength < 50) {
+      // Short query: moderate response
+      responseTokens = 1000;
+    } else if (queryLength < 150) {
+      // Medium query: detailed response
+      responseTokens = 1500;
+    } else {
+      // Long/complex query: comprehensive response
+      responseTokens = 2500;
+    }
+    
+    // Ensure we don't exceed model limits
+    const dynamicMaxTokens = Math.min(
+      responseTokens,
+      Math.max(500, maxContextTokens - estimatedInputTokens - 500) // Always allow at least 500 tokens for response
+    );
+    
+    console.log(`[RAG] Dynamic token calculation: input ~${estimatedInputTokens}, response limit ${dynamicMaxTokens}`);
+
     try {
       if (options.streaming && options.res) {
         // For streaming responses, we need to handle this differently
@@ -157,7 +184,7 @@ export class RAGService {
           ],
           {
             responseFormat: { type: "json_object" },
-            maxTokens: 2000,
+            maxTokens: dynamicMaxTokens,
           }
         );
 
