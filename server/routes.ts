@@ -9,6 +9,7 @@ import { aiTutorService } from "./services/aiTutor";
 import { quizGeneratorService } from "./services/quizGenerator";
 import { flashcardGeneratorService } from "./services/flashcardGenerator";
 import { documentProcessorService } from "./services/documentProcessor";
+import { AgentOrchestrator } from "./agent/orchestrator";
 import { 
   insertSettingsSchema,
   insertFolderSchema,
@@ -364,6 +365,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error extracting highlights:", error);
       res.status(500).json({ message: "Failed to extract highlights" });
+    }
+  });
+
+  // Claim verification endpoint
+  app.post('/api/chat/verify-claims', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { responseText } = req.body;
+
+      if (!responseText || typeof responseText !== 'string') {
+        return res.status(400).json({ message: "responseText is required and must be a string" });
+      }
+
+      console.log(`[Verify Claims] Starting verification for user ${userId}, text length: ${responseText.length}`);
+
+      // Create agent orchestrator for this user
+      const agent = new AgentOrchestrator(userId);
+
+      // Verify the response
+      const verification = await agent.verifyResponse(responseText);
+
+      console.log(`[Verify Claims] Verification complete: ${verification.summary}`);
+
+      res.json(verification);
+    } catch (error) {
+      console.error("[Verify Claims] Error verifying claims:", error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ message: "Failed to verify claims", error: errorMessage });
     }
   });
 
