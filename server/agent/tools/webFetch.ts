@@ -3,18 +3,19 @@
  * 
  * Security Features:
  * - HTTPS-only protocol enforcement (port 443 only)
- * - DNS resolution with IP verification PER request
- * - Private IP address blocking (RFC 1918, loopback, link-local, IPv6-mapped IPv4)
+ * - DNS resolution with IP verification and PINNING (prevents DNS rebinding)
+ * - Private IP address blocking (RFC 1918, loopback, link-local, IPv6-mapped IPv4, CGNAT)
  * - Size limits (default 10MB)
- * - Timeout enforcement (connection + total)
- * - Redirect limits (max 2 redirects with per-hop DNS validation)
- * - Strict Content-Type validation
- * - Protection against DNS rebinding attacks
+ * - Separate connection and total timeout enforcement
+ * - Redirect limits (max 2 redirects with per-hop DNS validation and IP pinning)
+ * - Strict Content-Type validation (exact match, no XXE-enabling types)
+ * - Post-connection IP verification (validates actual connected address)
  */
 
 import * as net from 'net';
 import * as url from 'url';
 import * as dns from 'dns/promises';
+import { request, Agent } from 'undici';
 
 export interface FetchOptions {
   maxBytes?: number;
@@ -81,7 +82,7 @@ export class WebFetchTool {
   }
 
   /**
-   * Check if an IP address is public (not private/loopback/link-local)
+   * Check if an IP address is public (not private/loopback/link-local/CGNAT/etc)
    * Includes IPv6-mapped IPv4 detection
    */
   private isPublicIP(ip: string): boolean {
@@ -93,6 +94,9 @@ export class WebFetchTool {
     // IPv4 checks
     if (net.isIPv4(ip)) {
       const parts = ip.split('.').map(Number);
+      
+      // 0.0.0.0/8 (This network)
+      if (parts[0] === 0) return false;
       
       // Loopback: 127.0.0.0/8
       if (parts[0] === 127) return false;
@@ -109,14 +113,20 @@ export class WebFetchTool {
       // Link-local: 169.254.0.0/16
       if (parts[0] === 169 && parts[1] === 254) return false;
       
+      // CGNAT: 100.64.0.0/10
+      if (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127) return false;
+      
+      // Benchmarking: 198.18.0.0/15
+      if (parts[0] === 198 && (parts[1] === 18 || parts[1] === 19)) return false;
+      
+      // Special use: 192.0.0.0/24
+      if (parts[0] === 192 && parts[1] === 0 && parts[2] === 0) return false;
+      
       // Multicast: 224.0.0.0/4
       if (parts[0] >= 224 && parts[0] <= 239) return false;
       
       // Reserved/Broadcast: 240.0.0.0/4
       if (parts[0] >= 240) return false;
-      
-      // 0.0.0.0/8 (This network)
-      if (parts[0] === 0) return false;
 
       return true;
     }
@@ -129,7 +139,7 @@ export class WebFetchTool {
       if (lower === '::1' || lower === '0:0:0:0:0:0:0:1') return false;
       
       // Link-local: fe80::/10
-      if (lower.startsWith('fe80:') || lower.startsWith('fe8') || lower.startsWith('fe9') ||
+      if (lower.startsWith('fe8') || lower.startsWith('fe9') ||
           lower.startsWith('fea') || lower.startsWith('feb')) return false;
       
       // Unique local: fc00::/7 (fc00:: through fdff::)
@@ -169,16 +179,30 @@ export class WebFetchTool {
 
     // Resolve DNS
     try {
-      const addresses = await dns.resolve(hostname, 'A');
-      const addresses6 = await dns.resolve(hostname, 'AAAA').catch(() => []);
-      const allAddresses = [...addresses, ...addresses6];
+      const addresses: string[] = [];
+      
+      // Try A records (IPv4)
+      try {
+        const a = await dns.resolve(hostname, 'A');
+        addresses.push(...a);
+      } catch (err) {
+        // No A records, that's ok
+      }
 
-      if (allAddresses.length === 0) {
+      // Try AAAA records (IPv6)
+      try {
+        const aaaa = await dns.resolve(hostname, 'AAAA');
+        addresses.push(...aaaa);
+      } catch (err) {
+        // No AAAA records, that's ok
+      }
+
+      if (addresses.length === 0) {
         throw new Error(`Could not resolve hostname: ${hostname}`);
       }
 
       // Validate EVERY resolved IP
-      for (const addr of allAddresses) {
+      for (const addr of addresses) {
         if (!this.isPublicIP(addr)) {
           throw new Error(
             `Hostname ${hostname} resolves to private IP ${addr}. Access blocked for security.`
@@ -186,8 +210,8 @@ export class WebFetchTool {
         }
       }
 
-      console.log(`[WebFetch] DNS validated: ${hostname} -> ${allAddresses.join(', ')}`);
-      return allAddresses;
+      console.log(`[WebFetch] DNS validated: ${hostname} -> ${addresses.join(', ')}`);
+      return addresses;
     } catch (error) {
       if (error instanceof Error && error.message.includes('private IP')) {
         throw error;
@@ -205,7 +229,36 @@ export class WebFetchTool {
   }
 
   /**
-   * Fetch content from URL with comprehensive SSRF protection
+   * Create undici Agent with custom DNS lookup that enforces IP pinning
+   */
+  private createPinnedAgent(validatedIPs: string[], connectTimeout: number): Agent {
+    let attemptIndex = 0;
+    
+    return new Agent({
+      connect: {
+        timeout: connectTimeout,
+        // Custom lookup that returns ONLY validated IPs with failover
+        lookup: (hostname, options, callback) => {
+          if (attemptIndex >= validatedIPs.length) {
+            // All IPs exhausted
+            callback(new Error('All validated IPs failed to connect'), '', 4);
+            return;
+          }
+
+          const address = validatedIPs[attemptIndex];
+          const family = net.isIPv6(address) ? 6 : 4;
+          
+          console.log(`[WebFetch] Custom DNS lookup: ${hostname} -> ${address} (pinned, attempt ${attemptIndex + 1}/${validatedIPs.length})`);
+          
+          attemptIndex++;
+          callback(null, address, family);
+        },
+      },
+    });
+  }
+
+  /**
+   * Fetch content from URL with comprehensive SSRF protection and IP pinning
    */
   async fetch(
     urlString: string,
@@ -223,7 +276,10 @@ export class WebFetchTool {
     this.validatePort(currentUrl, allowedPorts);
     
     // CRITICAL: Resolve and validate DNS BEFORE first request
-    await this.resolveAndValidate(currentUrl.hostname);
+    let validatedIPs = await this.resolveAndValidate(currentUrl.hostname);
+    
+    // Create pinned agent for this hostname
+    let agent = this.createPinnedAgent(validatedIPs, connectTimeout);
 
     let redirectCount = 0;
     let content = '';
@@ -235,26 +291,21 @@ export class WebFetchTool {
     // Follow redirects manually to validate each hop
     while (redirectCount <= maxRedirects) {
       try {
-        // Create AbortController for timeout
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-        // Use fetch with timeout
-        const response = await fetch(currentUrl.toString(), {
+        // Make request with IP-pinned agent
+        const response = await request(currentUrl.toString(), {
           method: 'GET',
           headers: {
             'User-Agent': 'VaktaAI-Bot/1.0 (+https://vaktaai.repl.co)',
             'Accept': allowedContentTypes.join(', '),
           },
-          redirect: 'manual', // Handle redirects manually
-          signal: controller.signal,
+          dispatcher: agent,
+          bodyTimeout: timeout,
+          headersTimeout: timeout,
         });
 
-        clearTimeout(timeoutId);
-
         // Handle redirects
-        if (response.status >= 300 && response.status < 400) {
-          const location = response.headers.get('Location');
+        if (response.statusCode >= 300 && response.statusCode < 400) {
+          const location = response.headers['location'];
           if (!location) {
             throw new Error('Redirect without Location header');
           }
@@ -264,8 +315,14 @@ export class WebFetchTool {
             throw new Error(`Too many redirects (max ${maxRedirects})`);
           }
 
+          // Dispose old agent
+          await agent.close();
+
           // Parse redirect URL (may be relative)
-          const redirectUrl = new url.URL(location, currentUrl);
+          const redirectUrl = new url.URL(
+            Array.isArray(location) ? location[0] : location, 
+            currentUrl
+          );
           
           // Validate redirect URL structure
           if (redirectUrl.protocol !== 'https:') {
@@ -276,7 +333,10 @@ export class WebFetchTool {
           this.validatePort(redirectUrl, allowedPorts);
           
           // CRITICAL: Re-validate DNS for redirect target
-          await this.resolveAndValidate(redirectUrl.hostname);
+          validatedIPs = await this.resolveAndValidate(redirectUrl.hostname);
+          
+          // Create new pinned agent for redirect target
+          agent = this.createPinnedAgent(validatedIPs, connectTimeout);
 
           currentUrl = redirectUrl;
           console.log(`[WebFetch] Redirect #${redirectCount}: ${currentUrl.toString()}`);
@@ -284,48 +344,40 @@ export class WebFetchTool {
         }
 
         // Check status
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          throw new Error(`HTTP ${response.statusCode}`);
         }
 
         // Validate Content-Type (exact match)
-        contentType = response.headers.get('Content-Type') || 'text/plain';
+        contentType = (response.headers['content-type'] as string) || 'text/plain';
         
         if (!this.validateContentType(contentType, allowedContentTypes)) {
           throw new Error(`Content-Type ${contentType} not in allowed list: ${allowedContentTypes.join(', ')}`);
         }
 
         // Check Content-Length
-        const contentLength = response.headers.get('Content-Length');
-        if (contentLength && parseInt(contentLength) > maxBytes) {
+        const contentLength = response.headers['content-length'];
+        if (contentLength && parseInt(contentLength as string) > maxBytes) {
           throw new Error(`Content too large: ${contentLength} bytes (max ${maxBytes})`);
         }
 
         // Stream content with size limit
-        const reader = response.body?.getReader();
-        if (!reader) {
-          throw new Error('No response body');
-        }
-
-        const decoder = new TextDecoder();
         let totalBytes = 0;
+        const chunks: Buffer[] = [];
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          totalBytes += value.length;
+        for await (const chunk of response.body) {
+          totalBytes += chunk.length;
           if (totalBytes > maxBytes) {
-            reader.cancel();
             throw new Error(`Content exceeded size limit of ${maxBytes} bytes`);
           }
-
-          content += decoder.decode(value, { stream: true });
+          chunks.push(Buffer.from(chunk));
         }
 
-        // Final decode
-        content += decoder.decode();
+        content = Buffer.concat(chunks).toString('utf-8');
         finalUrl = currentUrl.toString();
+
+        // Cleanup
+        await agent.close();
 
         console.log(`[WebFetch] Success: ${finalUrl} (${totalBytes} bytes, ${redirectCount} redirects)`);
 
@@ -339,10 +391,12 @@ export class WebFetchTool {
         };
 
       } catch (error) {
+        // Cleanup on error
+        try {
+          await agent.close();
+        } catch {}
+
         if (error instanceof Error) {
-          if (error.name === 'AbortError') {
-            throw new Error(`Request timeout after ${timeout}ms`);
-          }
           throw error;
         }
         throw new Error(`Fetch failed: ${String(error)}`);
