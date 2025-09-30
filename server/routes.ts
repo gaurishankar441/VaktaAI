@@ -289,6 +289,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { query, documentIds, threadId, streaming = false } = req.body;
 
+      // Validate thread exists
+      const thread = await storage.getChatThread(threadId);
+      if (!thread) {
+        return res.status(400).json({ 
+          message: "Thread not found. Please create a thread first." 
+        });
+      }
+
       // Save user message
       await storage.createChatMessage({
         threadId,

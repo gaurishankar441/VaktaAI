@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { FlashcardReviewer } from "@/components/flashcards/FlashcardReviewer";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
