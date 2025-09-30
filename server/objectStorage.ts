@@ -181,6 +181,32 @@ export class ObjectStorageService {
     return objectFile;
   }
 
+  // Get a signed download URL for a file (works with both object paths and full URLs)
+  async getSignedDownloadURL(filePathOrUrl: string, ttlSec: number = 3600): Promise<string> {
+    try {
+      // If it's already a full GCS URL, extract the path
+      let objectPath = filePathOrUrl;
+      if (filePathOrUrl.startsWith("https://storage.googleapis.com/")) {
+        const url = new URL(filePathOrUrl);
+        objectPath = url.pathname; // This will be like /bucket-name/path/to/file
+      }
+
+      // Parse the object path to get bucket and object name
+      const { bucketName, objectName } = parseObjectPath(objectPath);
+
+      // Generate signed URL for GET method
+      return signObjectURL({
+        bucketName,
+        objectName,
+        method: "GET",
+        ttlSec,
+      });
+    } catch (error) {
+      console.error("Failed to generate signed download URL:", error);
+      throw new Error(`Failed to generate signed URL: ${error.message}`);
+    }
+  }
+
   normalizeObjectEntityPath(
     rawPath: string,
   ): string {
@@ -297,3 +323,5 @@ async function signObjectURL({
   const { signed_url: signedURL } = await response.json();
   return signedURL;
 }
+
+export const objectStorageService = new ObjectStorageService();

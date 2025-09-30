@@ -203,8 +203,15 @@ export class DocumentProcessorService {
     console.log("[PDF] Extracting from PDF:", url);
     
     try {
-      // Fetch the PDF file first
-      const response = await fetch(url);
+      // Import object storage service
+      const { objectStorageService } = await import('../objectStorage.js');
+      
+      // Generate signed URL for secure file access (1 hour TTL)
+      const signedUrl = await objectStorageService.getSignedDownloadURL(url, 3600);
+      console.log("[PDF] Using signed URL for download");
+      
+      // Fetch the PDF file using signed URL
+      const response = await fetch(signedUrl);
       if (!response.ok) {
         throw new Error(`Failed to fetch PDF: ${response.status} ${response.statusText}`);
       }
@@ -268,8 +275,15 @@ export class DocumentProcessorService {
     try {
       const mammoth = await import('mammoth');
       
-      // Fetch the DOCX file
-      const response = await fetch(url);
+      // Import object storage service
+      const { objectStorageService } = await import('../objectStorage.js');
+      
+      // Generate signed URL for secure file access (1 hour TTL)
+      const signedUrl = await objectStorageService.getSignedDownloadURL(url, 3600);
+      console.log("[DOCX] Using signed URL for download");
+      
+      // Fetch the DOCX file using signed URL
+      const response = await fetch(signedUrl);
       if (!response.ok) {
         throw new Error(`Failed to fetch DOCX: ${response.statusText}`);
       }
