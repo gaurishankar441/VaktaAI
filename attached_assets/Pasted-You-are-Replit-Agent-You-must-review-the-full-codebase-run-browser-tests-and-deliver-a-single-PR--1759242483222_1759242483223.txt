@@ -1,0 +1,247 @@
+You are Replit Agent. You must review the full codebase, run browser tests, and deliver a single PR that:
+
+converts Doc Chat into an Agentic RAG pipeline that verifies claims on the open web before answering, and
+
+upgrades AI Tutor into an Agentic, Socratic tutor that adapts to the learner and cites sources.
+
+Success Criteria (acceptance tests must pass)
+
+Doc Chat (Agentic RAG)
+
+For any question on an uploaded doc, the system: plans → retrieves (vector) → researches online when needed → verifies claims → answers with grounded citations (doc + web).
+
+Responses stream via SSE, include a “Verification Summary” and per-claim citations.
+
+If sources contradict, answer flags uncertainty and shows both sides.
+
+Upload is reliable; failures surface actionable errors; progress/status is visible.
+
+AI Tutor (Agentic)
+
+Tutor uses Socratic questioning and worked-example→practice→reflection flow, adapts difficulty (Bloom levels), gives specific, actionable feedback, and provides citations when explaining.
+
+A lesson plan is created per session (goals, steps, checkpoints) and adjusted as the learner answers.
+
+Tutor never dumps answers; it scaffolds (limits load, segments tasks) and only reveals solutions after attempts.
+
+Dev Quality
+
+All unit/integration/E2E tests pass; no unhandled promise rejections; rate limiting, SSRF guards in fetcher; env-guarded web search keys; CI green.
+
+Part A — Code Review & Stabilization (do this first)
+
+Full-repo scan: identify all Doc Chat and Tutor code paths (upload → ingest → embed → index → retrieve → rerank → generate → stream).
+
+Fix existing issues: especially “Doc Chat returns no response” and “upload sometimes fails”. Add robust error messages and retries.
+
+SSE: verify server uses text/event-stream and client EventSource; stream early tokens. 
+Eric
+
+Vector isolation: confirm Pinecone namespaces or Qdrant collections per workspace/user. 
+Learn Prompting
++1
+
+Deliverable: AUDIT_NOTES.md with a bullet list of defects found and fixes applied.
+
+Part B — Implement Agentic RAG for Doc Chat
+B1. Agent loop (ReAct + Self-Critique + CoVe)
+
+Add an Agent Orchestrator that runs the loop:
+
+Plan (ReAct): break the user query into sub-goals and choose tools (“vector_retrieve”, “web_search”, “web_fetch”). 
+arXiv
+
+Act: call tools; gather snippets.
+
+Reflect (Self-RAG/CoVe): generate preliminary answer, extract factual claims, formulate verification Qs, re-search/fetch, verify each claim, revise answer. 
+arXiv
++1
+
+Cite & Stream: output final answer with per-claim citations and a “Verification Summary”.
+
+Keep loop tight with timeouts and a max-iterations cap (e.g., 3–4).
+
+B2. Tools
+
+Vector Retrieve: current top-k retrieval (e.g., 20), optional re-rank (Cohere) to 8.
+
+Web Search: pluggable provider (Bing/SerpAPI); env-gated; returns {title,url,snippet}.
+
+Web Fetch: HTTPS GET with: protocol allow-list, block private IPs, cap size, respect content-type, strict redirect policy (SSRF defenses).
+
+Snippet Scorer: simple ranker by query+claim similarity; dedupe near-duplicates.
+
+B3. Graph/Hiearchical options (if time permits)
+
+GraphRAG (entity/relation graph summaries) for cross-doc questions. 
+Microsoft
++1
+
+RAPTOR summaries for long documents (tree retrieval). 
+arXiv
+
+B4. Prompt strategy (Doc Chat)
+
+System (“Policy & Grounding”)
+
+“You are a cautious research assistant. You must ground every non-obvious claim with citations. If verification fails or sources conflict, say so and show both views.”
+
+Planner (ReAct)
+
+“Given the question and available tools, produce a short plan (bullets), then take the next action.” 
+arXiv
+
+Verifier (CoVe + Self-RAG)
+
+“Extract atomic claims. For each, search the web, fetch top sources, and mark Supported / Contradicted / Uncertain with URLs. Revise the answer accordingly.” 
+Learn Prompting
++1
+
+Answer Composer
+
+“Write a concise answer first; then append Citations (doc pages + URLs) and a Verification Summary.”
+
+Part C — Upgrade AI Tutor to Agentic Socratic Tutor
+C1. Tutor loop (plan → teach → probe → feedback → adapt)
+
+Lesson Planner: derives learning goal, prior knowledge check, Bloom level target. 
+saskoer.ca
+
+Instruction stage uses worked examples and segmentation to reduce cognitive load; switch to practice items. 
+Education NSW
++1
+
+Socratic probing: ask guiding questions; don’t reveal final answers until 1–2 attempts. 
+Global Scientific Journal
+
+Feedback: provide task/process/self-regulation level feedback per Hattie; actionable next step. 
+Cambridge University Press & Assessment
++1
+
+Adaptation: adjust difficulty (Bloom levels ↑/↓) based on correctness and confidence; log mastery state.
+
+C2. Tutor prompt pack (add to PROMPTS.md)
+
+System – “Teacher of Record”
+
+“You are a patient, evidence-driven teacher. Use Socratic questions, worked examples, segmentation, and explicit feedback. Avoid giving solutions immediately. Cite sources when explaining substantive facts.” 
+SpringerLink
++1
+
+Planner Template
+
+Inputs: topic, grade, prior knowledge signal. Outputs: objectives, Bloom level, steps, checkpoints, resources. 
+saskoer.ca
+
+Probe Template
+
+“Ask 1 question at a time; if incorrect, give process-level hint; if correct, raise Bloom level.” 
+Cambridge University Press & Assessment
+
+Feedback Template
+
+“State what’s right/wrong; give next micro-step; offer retrieval prompt or mini-exercise.” 
+VISIBLE LEARNING
+
+Part D — Code Tasks (concrete)
+
+Create apps/api/src/agent/tools/search.ts and .../webFetch.ts with SSRF guards (protocol allow-list, reject private IPs, 10 MB cap, 5 s connect timeout).
+
+Add apps/api/src/agent/orchestrator.ts (Planner/Act/Reflect loop; JSON tool schema).
+
+Extend RAG service with verifyClaims(claims, snippets) and composeVerifiedAnswer(...).
+
+Wire UI:
+
+Chat panel shows “Verification Summary” drawer with per-claim status (Supported/Contradicted/Uncertain) and links.
+
+Show doc citations (page/timecode) + web URLs.
+
+Tutor: add apps/api/src/tutor/lessonPlanner.ts, probeEngine.ts, feedbackEngine.ts; expose /api/tutor/session that persists plan, attempts, mastery.
+
+Env & Config: add WEB_SEARCH_PROVIDER, WEB_SEARCH_KEY, FETCH_MAX_BYTES, FETCH_TIMEOUT_MS.
+
+Rate-limit verification calls; cache web snippets per (query,host) for 10–30 minutes.
+
+Part E — Tests & Demos
+
+Unit:
+
+verifyClaims.spec.ts (supported/contradicted/uncertain classification).
+
+webFetch.spec.ts (SSRF: blocks private IPs, enforces size/time).
+
+Integration:
+
+Ask a question requiring off-doc facts; ensure answer includes web citations and verification statuses.
+
+Tutor flow: plan → probe → feedback → mastery update; check it avoids immediate solution.
+
+E2E (Playwright):
+
+Upload small PDF → ask doc/source-mix question → see streaming answer + verification drawer populated.
+
+Tutor: pick topic → answer 2 probes → see adaptive difficulty + feedback.
+
+CI: add a “verify-agentic-rag” job; fail build on missing citations or failing SSRF tests.
+
+Part F — Deliverables (must output)
+
+PR with all code changes.
+
+PROMPTS.md updated (Agentic RAG & Agentic Tutor sections).
+
+SECURITY.md updated (web fetch SSRF policy).
+
+DEMO_SCRIPTS.md with 2 scripted demos (Doc Chat verification; Tutor Socratic session).
+
+Test report: pass summary for unit/integration/E2E.
+
+ONE message at the end containing:
+
+Summary of changes,
+
+how to run,
+
+and confirmation that all acceptance tests passed.
+
+Guardrails
+
+Snapshot (git tag) before edits; single PR at the end.
+
+Strict timeouts on web tools; never fetch non-HTTP(S); never follow >2 redirects.
+
+If verification fails, answer conservatively (state uncertainty).
+
+Respect rate limits; exponential backoff.
+
+References (design basis)
+
+Agentic RAG overviews & patterns (Microsoft & community) 
+GitHub
++1
+
+ReAct reasoning-and-acting loop 
+arXiv
+
+Self-RAG (retrieve/generate/critique) 
+arXiv
++1
+
+Chain-of-Verification self-checking prompts 
+Learn Prompting
++1
+
+GraphRAG & hierarchical retrieval (RAPTOR) for long/cross-doc questions 
+Microsoft
++2
+arXiv
++2
+
+Pedagogy: Bloom’s Taxonomy, Cognitive Load (segmentation, worked examples), Socratic method, Feedback (Hattie) 
+EPRA Journals
++4
+saskoer.ca
++4
+Education NSW
++4
