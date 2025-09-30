@@ -78,7 +78,7 @@ export default function Landing() {
               <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
                 <GraduationCap className="w-6 h-6 text-primary-foreground" />
               </div>
-              <span className="text-2xl font-bold">EduShepherd</span>
+              <span className="text-2xl font-bold">VaktaAI</span>
             </div>
             <Button 
               onClick={() => window.location.href = '/api/login'}

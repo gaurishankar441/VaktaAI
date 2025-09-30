@@ -20,7 +20,7 @@ export class QdrantService {
   private ready: boolean = false;
 
   constructor() {
-    this.collectionName = process.env.QDRANT_COLLECTION_NAME || 'edushepherd_embeddings';
+    this.collectionName = process.env.QDRANT_COLLECTION_NAME || 'vaktaai_embeddings';
     this.initializeClient();
   }
 

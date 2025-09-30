@@ -16,7 +16,7 @@ export class PineconeService {
   private indexName: string;
 
   constructor() {
-    this.indexName = process.env.PINECONE_INDEX_NAME || 'edushepherd-embeddings';
+    this.indexName = process.env.PINECONE_INDEX_NAME || 'vaktaai-embeddings';
     this.initializeClient();
   }
 

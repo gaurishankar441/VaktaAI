@@ -1,8 +1,8 @@
-# EduShepherd - AI-Powered Learning Platform
+# VaktaAI - AI-Powered Learning Platform
 
 ## Overview
 
-EduShepherd is a comprehensive educational platform that leverages AI and RAG (Retrieval-Augmented Generation) technology to provide personalized learning experiences. The platform enables students to interact with their study materials through multiple learning modalities including document chat, AI tutoring, quiz generation, flashcard creation, and structured note-taking.
+VaktaAI is a comprehensive educational platform that leverages AI and RAG (Retrieval-Augmented Generation) technology to provide personalized learning experiences. The platform enables students to interact with their study materials through multiple learning modalities including document chat, AI tutoring, quiz generation, flashcard creation, and structured note-taking.
 
 **Core Purpose:** Transform static educational content (PDFs, presentations, documents, videos) into interactive, AI-enhanced learning experiences with semantic search, personalized tutoring, and adaptive study tools.
 

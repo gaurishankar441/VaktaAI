@@ -101,7 +101,7 @@ export default function Settings() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'edushepherd-export.json';
+      a.download = 'vaktaai-export.json';
       a.click();
       URL.revokeObjectURL(url);
     },
