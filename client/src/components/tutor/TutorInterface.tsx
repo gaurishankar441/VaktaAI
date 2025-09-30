@@ -8,7 +8,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { ChatMessage } from "../chat/ChatMessage";
-import { Send, X, UserCheck } from "lucide-react";
+import { LessonPlanDisplay } from "./LessonPlanDisplay";
+import { MasteryProgress } from "./MasteryProgress";
+import { Send, X, UserCheck, Brain } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -28,6 +30,7 @@ interface TutorMessage {
   role: 'user' | 'tutor';
   content: string;
   messageType?: string;
+  orchestrationData?: any;
   createdAt: string;
 }
 
@@ -103,6 +106,23 @@ export function TutorInterface({ sessionId, onSessionChange }: TutorInterfacePro
       return response.json();
     },
     onSuccess: (data) => {
+      // Store orchestration data if available
+      if (data.orchestrationData && sessionData) {
+        // Add orchestrationData to the latest tutor message
+        const updatedMessages = [...sessionData.messages];
+        const lastTutorMsgIdx = updatedMessages.map(m => m.role).lastIndexOf('tutor');
+        if (lastTutorMsgIdx !== -1) {
+          updatedMessages[lastTutorMsgIdx] = {
+            ...updatedMessages[lastTutorMsgIdx],
+            orchestrationData: data.orchestrationData
+          };
+        }
+        setSessionData({
+          ...sessionData,
+          messages: updatedMessages
+        });
+      }
+      
       // Refetch session data to get updated messages
       refetch();
       setInput("");
@@ -240,33 +260,63 @@ export function TutorInterface({ sessionId, onSessionChange }: TutorInterfacePro
     createdAt: msg.createdAt,
   }));
 
+  // Extract mastery data from recent orchestration data
+  const latestMasteryData = sessionData.messages
+    .filter(m => m.orchestrationData?.adaptations || m.orchestrationData?.feedback)
+    .pop()?.orchestrationData;
+
   return (
-    <div className="h-full flex flex-col">
-      {/* Header */}
-      <div className="p-4 border-b border-border">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="font-semibold">
-              {sessionData.session.gradeLevel} • {sessionData.session.subject} • {sessionData.session.topic}
-            </h2>
-            <p className="text-sm text-muted-foreground">AI Tutor Session</p>
+    <div className="h-full flex">
+      {/* Main Chat Area */}
+      <div className="flex-1 flex flex-col">
+        {/* Header */}
+        <div className="p-4 border-b border-border">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="font-semibold">
+                {sessionData.session.gradeLevel} • {sessionData.session.subject} • {sessionData.session.topic}
+              </h2>
+              <p className="text-sm text-muted-foreground">AI Tutor Session</p>
+            </div>
+            <Button 
+              variant="ghost" 
+              size="icon"
+              onClick={handleEndSession}
+              data-testid="button-end-session"
+            >
+              <X className="w-4 h-4" />
+            </Button>
           </div>
-          <Button 
-            variant="ghost" 
-            size="icon"
-            onClick={handleEndSession}
-            data-testid="button-end-session"
-          >
-            <X className="w-4 h-4" />
-          </Button>
         </div>
-      </div>
-      
-      {/* Messages */}
-      <ScrollArea className="flex-1 p-4" ref={scrollAreaRef}>
+        
+        {/* Messages */}
+        <ScrollArea className="flex-1 p-4" ref={scrollAreaRef}>
         <div className="space-y-4 max-w-4xl mx-auto">
-          {chatMessages.map((message) => (
-            <ChatMessage key={message.id} message={message} />
+          {sessionData.messages.map((message) => (
+            <div key={message.id}>
+              <ChatMessage message={{
+                id: message.id,
+                role: message.role,
+                content: message.content,
+                createdAt: message.createdAt
+              }} />
+              
+              {/* Show Lesson Plan if available */}
+              {message.messageType === 'lesson_plan' && message.orchestrationData?.lessonPlan && (
+                <div className="mt-3 ml-12" data-testid={`lesson-plan-${message.id}`}>
+                  <LessonPlanDisplay lessonPlan={message.orchestrationData.lessonPlan} />
+                </div>
+              )}
+              
+              {/* Show Feedback badges for feedback messages */}
+              {message.messageType === 'feedback' && message.orchestrationData?.feedback && (
+                <div className="mt-2 ml-12">
+                  <div className="text-xs text-muted-foreground">
+                    {message.orchestrationData.masteryUpdate && "✨ Mastery updated"}
+                  </div>
+                </div>
+              )}
+            </div>
           ))}
           
           {/* Loading indicator */}
@@ -285,26 +335,39 @@ export function TutorInterface({ sessionId, onSessionChange }: TutorInterfacePro
         </div>
       </ScrollArea>
 
-      {/* Input */}
-      <div className="p-4 border-t border-border">
-        <div className="flex gap-3 max-w-4xl mx-auto">
-          <Input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder="Share your solution or ask a question..."
-            className="flex-1"
-            data-testid="input-tutor"
-          />
-          <Button 
-            onClick={handleSendMessage}
-            disabled={!input.trim() || sendMessageMutation.isPending}
-            data-testid="button-send-tutor"
-          >
-            <Send className="w-4 h-4" />
-          </Button>
+        {/* Input */}
+        <div className="p-4 border-t border-border">
+          <div className="flex gap-3 max-w-4xl mx-auto">
+            <Input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyPress={handleKeyPress}
+              placeholder="Share your solution or ask a question..."
+              className="flex-1"
+              data-testid="input-tutor"
+            />
+            <Button 
+              onClick={handleSendMessage}
+              disabled={!input.trim() || sendMessageMutation.isPending}
+              data-testid="button-send-tutor"
+            >
+              <Send className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
       </div>
+
+      {/* Mastery Progress Sidebar */}
+      {latestMasteryData && (
+        <div className="w-80 border-l border-border p-4 overflow-y-auto" data-testid="mastery-sidebar">
+          <MasteryProgress
+            masteryLevels={latestMasteryData.masteryLevels || []}
+            overallScore={latestMasteryData.overallScore || 0}
+            weakAreas={latestMasteryData.weakAreas || []}
+            strongAreas={latestMasteryData.strongAreas || []}
+          />
+        </div>
+      )}
     </div>
   );
 }
