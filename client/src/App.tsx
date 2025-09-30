@@ -17,6 +17,7 @@ import Quizzes from "@/pages/Quizzes";
 import Flashcards from "@/pages/Flashcards";
 import Resources from "@/pages/Resources";
 import Settings from "@/pages/Settings";
+import Documents from "@/pages/Documents";
 import Landing from "@/pages/Landing";
 import NotFound from "@/pages/not-found";
 
@@ -74,6 +75,7 @@ function Router() {
     <Switch>
       <Route path="/" component={isAuthenticated ? () => <ProtectedRoute component={Dashboard} /> : Landing} />
       <Route path="/dashboard" component={() => <ProtectedRoute component={Dashboard} />} />
+      <Route path="/documents" component={() => <ProtectedRoute component={Documents} />} />
       <Route path="/chat" component={() => <ProtectedRoute component={Chat} />} />
       <Route path="/tutor" component={() => <ProtectedRoute component={Tutor} />} />
       <Route path="/notes" component={() => <ProtectedRoute component={Notes} />} />

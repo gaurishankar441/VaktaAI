@@ -9,7 +9,8 @@ import {
   Folder,
   Settings,
   User,
-  LogOut
+  LogOut,
+  FileText
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
@@ -38,6 +39,11 @@ const navigationItems = [
     title: "Dashboard",
     url: "/",
     icon: Home,
+  },
+  {
+    title: "Documents",
+    url: "/documents",
+    icon: FileText,
   },
   {
     title: "Doc Chat",
