@@ -38,13 +38,13 @@ export function ChatInterface({ threadId, documentIds }: ChatInterfaceProps) {
   const { toast } = useToast();
 
   // Fetch messages for the thread
-  const { data: threadMessages } = useQuery({
+  const { data: threadMessages = [] } = useQuery<Message[]>({
     queryKey: ['/api/chat/threads', threadId, 'messages'],
     enabled: !!threadId,
   });
 
   // Fetch document details to check for YouTube videos
-  const { data: documents } = useQuery({
+  const { data: documents = [] } = useQuery<any[]>({
     queryKey: ['/api/documents'],
   });
 
@@ -189,7 +189,7 @@ export function ChatInterface({ threadId, documentIds }: ChatInterfaceProps) {
   };
 
   // Find YouTube videos in the current documents
-  const selectedDocuments = documents?.filter((doc: any) => documentIds.includes(doc.id)) || [];
+  const selectedDocuments = documents.filter((doc: any) => documentIds.includes(doc.id));
   const youtubeDoc = selectedDocuments.find((doc: any) => doc.sourceType === 'youtube');
   
   // Extract YouTube video ID

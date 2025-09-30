@@ -31,12 +31,12 @@ export default function Chat() {
   const { toast } = useToast();
 
   // Fetch chat threads
-  const { data: threads } = useQuery({
+  const { data: threads = [] } = useQuery<ChatThread[]>({
     queryKey: ['/api/chat/threads'],
   });
 
   // Fetch available documents
-  const { data: documents } = useQuery({
+  const { data: documents = [] } = useQuery<Document[]>({
     queryKey: ['/api/documents'],
   });
 
@@ -86,7 +86,7 @@ export default function Chat() {
     );
   };
 
-  const availableDocuments = documents?.filter((doc: Document) => doc.status === 'indexed') || [];
+  const availableDocuments = documents.filter((doc: Document) => doc.status === 'indexed');
 
   // If no thread selected, show thread selection
   if (!selectedThreadId) {
@@ -225,7 +225,7 @@ export default function Chat() {
   }
 
   // Show chat interface for selected thread
-  const selectedThread = threads?.find((t: ChatThread) => t.id === selectedThreadId);
+  const selectedThread = threads.find((t: ChatThread) => t.id === selectedThreadId);
   
   return (
     <MainLayout>

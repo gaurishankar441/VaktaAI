@@ -223,7 +223,7 @@ export class DocumentProcessorService {
       console.log("[PDF] Parsing PDF buffer, size:", buffer.length);
       
       // Import pdf-parse dynamically
-      const pdfParse = (await import('pdf-parse')).default;
+      const pdfParse = (await import('pdf-parse')).default as any;
       
       // Parse the PDF
       const data = await pdfParse(buffer);
@@ -248,7 +248,8 @@ export class DocumentProcessorService {
       };
     } catch (error) {
       console.error("[PDF] Extraction failed:", error);
-      throw new Error(`Failed to extract PDF content: ${error.message}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to extract PDF content: ${errorMessage}`);
     }
   }
 
@@ -293,7 +294,7 @@ export class DocumentProcessorService {
       
       // Extract text using mammoth
       const result = await mammoth.extractRawText({ buffer });
-      const extractedText = result.text.trim();
+      const extractedText = (result.value || '').trim();
       
       if (!extractedText) {
         throw new Error("No text extracted from DOCX");
@@ -316,7 +317,8 @@ export class DocumentProcessorService {
       };
     } catch (error) {
       console.error("[DOCX] Extraction error:", error);
-      throw new Error(`Failed to extract DOCX: ${error.message}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to extract DOCX: ${errorMessage}`);
     }
   }
 

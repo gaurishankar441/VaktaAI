@@ -38,7 +38,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const objectStorageService = new ObjectStorageService();
 
   // Serve private objects with ACL check
-  app.get("/objects/:objectPath(*)", isAuthenticated, async (req, res) => {
+  app.get("/objects/:objectPath(*)", isAuthenticated, async (req: any, res) => {
     const userId = req.user?.claims?.sub;
     try {
       const objectFile = await objectStorageService.getObjectEntityFile(req.path);
@@ -72,7 +72,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update file after upload
-  app.put("/api/files", isAuthenticated, async (req, res) => {
+  app.put("/api/files", isAuthenticated, async (req: any, res) => {
     if (!req.body.fileURL || !req.body.filename) {
       return res.status(400).json({ error: "fileURL and filename are required" });
     }
@@ -340,7 +340,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     } catch (error) {
       console.error("[Chat Query] Error processing chat query:", error);
-      res.status(500).json({ message: "Failed to process query", error: error.message });
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ message: "Failed to process query", error: errorMessage });
     }
   });
 

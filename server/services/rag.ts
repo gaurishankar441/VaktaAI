@@ -210,7 +210,8 @@ export class RAGService {
           parsedResponse = JSON.parse(response.content);
           console.log("[RAG] Successfully parsed JSON response");
         } catch (parseError) {
-          console.warn("[RAG] Failed to parse OpenAI response as JSON:", parseError.message);
+          const errorMsg = parseError instanceof Error ? parseError.message : String(parseError);
+          console.warn("[RAG] Failed to parse OpenAI response as JSON:", errorMsg);
           console.log("[RAG] Raw content:", response.content);
           // If response.content has actual content, use it
           if (response.content && response.content.trim().length > 0) {

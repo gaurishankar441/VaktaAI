@@ -13,6 +13,7 @@ export interface EmbeddingResult {
 export interface ChatResponse {
   content: string;
   tokens: number;
+  truncated?: boolean;
 }
 
 export interface StreamingChatOptions {
@@ -48,7 +49,8 @@ export class OpenAIService {
       };
     } catch (error) {
       console.error("OpenAI embedding error:", error);
-      throw new Error(`Failed to create embedding: ${error.message}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to create embedding: ${errorMessage}`);
     }
   }
 
@@ -75,7 +77,8 @@ export class OpenAIService {
       }));
     } catch (error) {
       console.error("OpenAI batch embedding error:", error);
-      throw new Error(`Failed to create batch embeddings: ${error.message}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to create batch embeddings: ${errorMessage}`);
     }
   }
 
@@ -167,7 +170,8 @@ export class OpenAIService {
       };
     } catch (error) {
       console.error("[OpenAI] Chat completion error:", error);
-      throw new Error(`Failed to complete chat: ${error.message}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to complete chat: ${errorMessage}`);
     }
   }
 
@@ -194,7 +198,8 @@ export class OpenAIService {
       }
     } catch (error) {
       console.error("OpenAI streaming error:", error);
-      throw new Error(`Failed to stream chat: ${error.message}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to stream chat: ${errorMessage}`);
     }
   }
 
@@ -225,7 +230,8 @@ export class OpenAIService {
       res.write(`data: ${JSON.stringify({ content: fullContent, type: 'complete' })}\n\n`);
       res.write('data: [DONE]\n\n');
     } catch (error) {
-      res.write(`data: ${JSON.stringify({ error: error.message, type: 'error' })}\n\n`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      res.write(`data: ${JSON.stringify({ error: errorMessage, type: 'error' })}\n\n`);
     } finally {
       res.end();
     }
