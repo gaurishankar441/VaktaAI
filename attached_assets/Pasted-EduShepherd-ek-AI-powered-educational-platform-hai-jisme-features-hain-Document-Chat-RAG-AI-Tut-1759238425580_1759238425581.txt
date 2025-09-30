@@ -1,0 +1,142 @@
+EduShepherd ek AI-powered educational platform hai jisme features hain:
+
+Document Chat / RAG
+
+AI Tutor
+
+Quiz / Flashcards generation
+
+Notes + rich text editor
+
+File / Resource manager
+
+Settings, account, privacy, data export
+
+Yeh document bataega kaise aap local environment me setup karein, deploy karein, aur contributions karein.
+
+2. Prerequisites
+
+Node.js (v18+ recommended)
+
+pnpm (preferred) or npm/yarn
+
+Docker & docker-compose
+
+Git (for version control)
+
+API keys:
+
+OPENAI_API_KEY
+
+COHERE_API_KEY
+
+PINECONE_API_KEY (or Qdrant URL + key)
+
+S3 (endpoint, bucket, key/secret)
+
+NEXTAUTH_SECRET
+
+(Optional) GitHub account & repo to push code
+
+3. Project Structure (Monorepo)
+edushepherd/
+  apps/
+    api/            # Backend server
+    web/            # Frontend (Next.js)
+  packages/
+    types/          # Shared types & schemas
+    ui/             # Shared UI components
+  prisma/
+    schema.prisma
+    migrations/
+    seed.ts
+  .github/
+    workflows/ci.yml
+  docker-compose.yml
+  .env.example
+  README.md
+  ARCHITECTURE.md
+  PROMPTS.md
+  SECURITY.md
+  DEPLOY.md
+  ...
+
+4. Setup & Local Development
+A) Clone / Prepare
+
+Clone the repo (agar link available)
+
+Copy .env.example to .env and fill API keys & secrets
+
+pnpm install (or npm install)
+
+B) Start Services
+docker compose up -d  # starts postgres, redis, qdrant (if used)
+
+C) Database Setup
+pnpm --filter api prisma migrate dev
+pnpm --filter api prisma db seed
+
+D) Run Apps
+
+In separate terminals:
+
+pnpm --filter api dev      # runs backend
+pnpm --filter web dev      # runs frontend  
+pnpm --filter api worker   # runs BullMQ / background jobs
+
+
+Browser open at http://localhost:3000.
+
+5. Testing & Quality
+
+Unit tests: schemas, utility functions
+
+Integration tests: API routes
+
+E2E / browser tests: auth → upload → chat → quiz → notes → export
+
+Run tests:
+
+pnpm test
+
+
+CI/CD: GitHub Actions config in .github/workflows/ci.yml
+
+Pre-commit linting, formatting (ESLint/Prettier)
+
+6. Deployment
+
+Use Docker / docker-compose in production or build separately:
+
+apps/api/Dockerfile
+
+apps/web/Dockerfile
+
+docker-compose.prod.yml
+
+Or deploy frontend on Vercel, backend on Render / Fly, database as managed, vector DB separately
+
+Ensure environment variables set in production
+
+Setup health checks, logging, monitoring
+
+7. Contribution Guidelines
+
+Branching: main always stable, feature branches prefixed feat/, fix/, chore/
+
+Commit message conventions
+
+Code reviews, PR templates
+
+Issue reporting format
+
+Updating architecture, docs, prompt templates
+
+8. Repository Sharing Request (to Agent)
+
+Use agent prompt like:
+
+At the end of your build and test cycle, please provide the full repository link (HTTPS) or a downloadable zip of the full monorepo. I need it to clone, audit, and run CI locally. Don’t just dump file contents — the link is essential for validation.
+
+Aap is template ko apne Replit project ki root me daal sakte ho as DEVELOPER_SETUP.md.
