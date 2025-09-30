@@ -77,9 +77,10 @@ export class DocumentProcessorService {
         };
       } catch (error) {
         // Update document with error status
+        const errorMessage = error instanceof Error ? error.message : String(error);
         await storage.updateDocument(document.id, {
           status: 'failed',
-          processingError: error.message,
+          processingError: errorMessage,
         });
         throw error;
       }
@@ -167,6 +168,11 @@ export class DocumentProcessorService {
         default:
           throw new Error(`Unsupported source type: ${sourceType}`);
       }
+
+      // Update document with extracted metadata
+      await storage.updateDocument(document.id, {
+        metadata: metadata,
+      });
 
       // Create chunks
       const chunkData = this.createChunks(extractedText, metadata, sourceType);
@@ -277,20 +283,68 @@ export class DocumentProcessorService {
   private async extractFromYouTube(url: string): Promise<{ text: string; metadata: any }> {
     console.log("Extracting from YouTube:", url);
     
-    // In production, this would:
-    // 1. Extract video ID from URL
-    // 2. Use YouTube API to get transcript/captions
-    // 3. Or use youtube-dl + Whisper for transcription
-    
-    return {
-      text: "Simulated YouTube transcript extraction. In production, this would use YouTube API for captions or youtube-dl + Whisper for transcription.",
-      metadata: {
-        videoId: this.extractYouTubeId(url),
-        duration: 2400, // 40 minutes
-        extractedAt: new Date().toISOString(),
-        method: 'simulated_youtube_extraction'
+    try {
+      const videoId = this.extractYouTubeId(url);
+      if (!videoId) {
+        throw new Error("Invalid YouTube URL");
       }
-    };
+
+      // Use youtubei.js to get video metadata
+      const Innertube = (await import('youtubei.js')).default;
+      const youtube = await Innertube.create();
+      const videoInfo = await youtube.getInfo(videoId);
+
+      const title = videoInfo.basic_info.title || 'Unknown Title';
+      // Author is an object in youtubei.js, extract name
+      const authorName = (videoInfo.basic_info.author as any)?.name || 
+                        String(videoInfo.basic_info.author) || 
+                        'Unknown Author';
+      const duration = videoInfo.basic_info.duration || 0;
+
+      // Try to get transcript using youtube-transcript
+      let transcript = '';
+      try {
+        const { YoutubeTranscript } = await import('youtube-transcript');
+        const transcriptItems = await YoutubeTranscript.fetchTranscript(videoId);
+        
+        // Combine transcript items with timestamps (offset is already in seconds)
+        transcript = transcriptItems
+          .map(item => `[${this.formatTimestamp(item.offset)}] ${item.text}`)
+          .join(' ');
+      } catch (transcriptError) {
+        console.warn("Failed to fetch YouTube transcript:", transcriptError);
+        // Fallback: use video description if transcript is not available
+        transcript = videoInfo.basic_info.short_description || 
+                    'Transcript not available for this video. This video may not have captions enabled.';
+      }
+
+      return {
+        text: transcript,
+        metadata: {
+          videoId,
+          title,
+          author: authorName,
+          duration,
+          extractedAt: new Date().toISOString(),
+          method: 'youtube_transcript_api'
+        }
+      };
+    } catch (error) {
+      console.error("YouTube extraction failed:", error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to extract YouTube content: ${errorMessage}`);
+    }
+  }
+
+  private formatTimestamp(seconds: number): string {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    
+    if (hours > 0) {
+      return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+    return `${minutes}:${secs.toString().padStart(2, '0')}`;
   }
 
   private async extractFromURL(url: string): Promise<{ text: string; metadata: any }> {
@@ -366,8 +420,24 @@ export class DocumentProcessorService {
   }
 
   private extractYouTubeId(url: string): string {
-    const match = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\n?#]+)/);
-    return match ? match[1] : '';
+    // Match various YouTube URL formats: watch, youtu.be, embed, shorts, live
+    const patterns = [
+      /(?:youtube\.com\/watch\?v=)([^&\n?#]+)/,           // youtube.com/watch?v=VIDEO_ID
+      /(?:youtu\.be\/)([^&\n?#]+)/,                       // youtu.be/VIDEO_ID
+      /(?:youtube\.com\/embed\/)([^&\n?#]+)/,             // youtube.com/embed/VIDEO_ID
+      /(?:youtube\.com\/shorts\/)([^&\n?#]+)/,            // youtube.com/shorts/VIDEO_ID
+      /(?:youtube\.com\/live\/)([^&\n?#]+)/,              // youtube.com/live/VIDEO_ID
+      /(?:youtube\.com\/v\/)([^&\n?#]+)/,                 // youtube.com/v/VIDEO_ID
+    ];
+    
+    for (const pattern of patterns) {
+      const match = url.match(pattern);
+      if (match) {
+        return match[1];
+      }
+    }
+    
+    return '';
   }
 
   async deleteDocument(documentId: string): Promise<void> {
