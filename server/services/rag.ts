@@ -157,20 +157,27 @@ export class RAGService {
     const chunkCount = context.chunks.length;
     let desiredResponseTokens: number;
     
-    // Base allocation on query complexity
+    // IMPORTANT: JSON responses need MORE tokens to complete the JSON structure properly
+    // If we hit token limit mid-JSON, OpenAI returns empty content
+    // Base allocation on query complexity (increased for JSON format)
     if (query.length < 50) {
-      desiredResponseTokens = 1500;
+      desiredResponseTokens = 2500; // Increased from 1500 for JSON overhead
     } else if (query.length < 150) {
-      desiredResponseTokens = 2500;
+      desiredResponseTokens = 3500; // Increased from 2500 for JSON overhead
     } else {
-      desiredResponseTokens = 3500;
+      desiredResponseTokens = 4500; // Increased from 3500 for JSON overhead
     }
     
     // Adjust based on context richness (more chunks = potentially more detailed answer)
     if (chunkCount >= 5 && contextTokens > 2000) {
-      desiredResponseTokens += 500;
+      desiredResponseTokens += 1000; // Increased from 500
     } else if (chunkCount >= 3) {
-      desiredResponseTokens += 250;
+      desiredResponseTokens += 500; // Increased from 250
+    }
+    
+    // Extra buffer for small contexts to ensure JSON completion
+    if (chunkCount <= 2) {
+      desiredResponseTokens += 500; // Extra buffer for small contexts
     }
     
     // CRITICAL: Strict clamp to prevent exceeding available budget
