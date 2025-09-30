@@ -132,7 +132,23 @@ export class OpenAIService {
           };
         }
         
-        // If no content at all, return a fallback message
+        // If no content at all, return a fallback message in appropriate format
+        if (options.responseFormat?.type === 'json_object') {
+          // Return valid JSON for JSON responses
+          return {
+            content: JSON.stringify({
+              answer: "I'm sorry, not enough data to answer confidently.",
+              takeaways: [
+                "The response was too long for the allocated token limit.",
+                "Please try asking a more specific question.",
+                "Consider breaking down complex queries into smaller parts."
+              ]
+            }),
+            tokens: response.usage?.total_tokens || 0,
+            truncated: true,
+          };
+        }
+        
         return {
           content: "The response was too long and could not be completed. Please try a more specific query.",
           tokens: response.usage?.total_tokens || 0,

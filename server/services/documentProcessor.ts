@@ -203,10 +203,7 @@ export class DocumentProcessorService {
     console.log("[PDF] Extracting from PDF:", url);
     
     try {
-      // Import pdf-parse dynamically
-      const pdfParse = (await import('pdf-parse')).default;
-      
-      // Fetch the PDF file
+      // Fetch the PDF file first
       const response = await fetch(url);
       if (!response.ok) {
         throw new Error(`Failed to fetch PDF: ${response.status} ${response.statusText}`);
@@ -217,6 +214,9 @@ export class DocumentProcessorService {
       const buffer = Buffer.from(arrayBuffer);
       
       console.log("[PDF] Parsing PDF buffer, size:", buffer.length);
+      
+      // Import and use pdf-parse - import it AFTER we have the buffer to avoid test file issues
+      const pdfParse = require('pdf-parse');
       
       // Parse the PDF
       const data = await pdfParse(buffer);
@@ -499,13 +499,39 @@ export class DocumentProcessorService {
   }
 
   private createChunks(text: string, metadata: any, sourceType: string): ChunkData[] {
-    const maxChunkSize = 512; // tokens (approximately 400 words)
-    const overlapSize = 64; // tokens
-    
     // Split text into words for rough tokenization
     const words = text.split(/\s+/);
-    const chunks: ChunkData[] = [];
+    const totalWords = words.length;
     
+    // 🎯 INTELLIGENT CHUNKING based on document size
+    let maxChunkSize: number; // tokens
+    let overlapSize: number; // tokens
+    
+    if (totalWords < 500) {
+      // Very small document - use small chunks
+      maxChunkSize = 256;
+      overlapSize = 32;
+    } else if (totalWords < 2000) {
+      // Small document (1-2 pages) - medium chunks
+      maxChunkSize = 512;
+      overlapSize = 64;
+    } else if (totalWords < 5000) {
+      // Medium document (3-5 pages) - larger chunks for better context
+      maxChunkSize = 800;
+      overlapSize = 100;
+    } else if (totalWords < 10000) {
+      // Large document (6-10 pages) - even larger chunks
+      maxChunkSize = 1000;
+      overlapSize = 128;
+    } else {
+      // Very large document (10+ pages) - maximum chunk size
+      maxChunkSize = 1200;
+      overlapSize = 150;
+    }
+    
+    console.log(`[Chunking] Document: ${totalWords} words → Chunk size: ${maxChunkSize} tokens, Overlap: ${overlapSize} tokens`);
+    
+    const chunks: ChunkData[] = [];
     const wordsPerToken = 0.75; // Rough estimate
     const maxWordsPerChunk = Math.floor(maxChunkSize * wordsPerToken);
     const overlapWords = Math.floor(overlapSize * wordsPerToken);

@@ -132,32 +132,42 @@ export class RAGService {
     
     const prompt = this.buildRAGPrompt(query, contextText);
 
-    // Calculate dynamic max tokens based on context size
+    // 🎯 INTELLIGENT TOKEN ALLOCATION based on context & query complexity
     const estimatedInputTokens = Math.ceil((contextText.length + query.length + 200) / 4); // Rough estimate: 4 chars = 1 token
-    const maxContextTokens = 8000; // GPT-5 context limit (approximate)
+    const maxContextTokens = 16000; // GPT-5 has larger context window
     
-    // Reserve tokens for response - scale based on query complexity
+    // Calculate response tokens based on BOTH query complexity AND context richness
     const queryLength = query.length;
+    const contextSizeTokens = Math.ceil(contextText.length / 4);
+    const chunkCount = context.chunks.length;
+    
     let responseTokens: number;
     
+    // Base allocation on query complexity
     if (queryLength < 50) {
-      // Short query: moderate response
-      responseTokens = 1000;
+      responseTokens = 1200; // Increased from 1000
     } else if (queryLength < 150) {
-      // Medium query: detailed response
-      responseTokens = 1500;
+      responseTokens = 2000; // Increased from 1500
     } else {
-      // Long/complex query: comprehensive response
-      responseTokens = 2500;
+      responseTokens = 3000; // Increased from 2500
     }
     
-    // Ensure we don't exceed model limits
+    // BOOST tokens if we have rich context (more chunks = more detailed answer possible)
+    if (chunkCount >= 5 && contextSizeTokens > 2000) {
+      responseTokens += 1000; // Bonus for rich multi-chunk context
+      console.log(`[RAG] Context boost: ${chunkCount} chunks with ${contextSizeTokens} tokens → +1000 response tokens`);
+    } else if (chunkCount >= 3 && contextSizeTokens > 1000) {
+      responseTokens += 500; // Moderate boost
+      console.log(`[RAG] Context boost: ${chunkCount} chunks with ${contextSizeTokens} tokens → +500 response tokens`);
+    }
+    
+    // Ensure we don't exceed model limits but allow more headroom
     const dynamicMaxTokens = Math.min(
       responseTokens,
-      Math.max(500, maxContextTokens - estimatedInputTokens - 500) // Always allow at least 500 tokens for response
+      Math.max(1000, maxContextTokens - estimatedInputTokens - 1000) // Minimum 1000 tokens for response
     );
     
-    console.log(`[RAG] Dynamic token calculation: input ~${estimatedInputTokens}, response limit ${dynamicMaxTokens}`);
+    console.log(`[RAG] Smart token allocation: input ~${estimatedInputTokens}, context ${contextSizeTokens} (${chunkCount} chunks), response ${dynamicMaxTokens}`);
 
     try {
       if (options.streaming && options.res) {

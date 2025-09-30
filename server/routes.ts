@@ -308,9 +308,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
       console.log("[Chat Query] User message saved");
 
-      // Get RAG context
+      // Get RAG context with more chunks for better answers
       console.log("[Chat Query] Retrieving context...");
-      const context = await ragService.retrieveContext(query, documentIds);
+      const context = await ragService.retrieveContext(query, documentIds, 12); // Increased from default 8 to 12 chunks
       console.log("[Chat Query] Context retrieved, chunks:", context.chunks.length);
 
       if (streaming) {
