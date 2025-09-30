@@ -10,6 +10,7 @@ import { quizGeneratorService } from "./services/quizGenerator";
 import { flashcardGeneratorService } from "./services/flashcardGenerator";
 import { documentProcessorService } from "./services/documentProcessor";
 import { AgentOrchestrator } from "./agent/orchestrator";
+import { z } from "zod";
 import { 
   insertSettingsSchema,
   insertFolderSchema,
@@ -18,6 +19,13 @@ import {
   insertChatThreadSchema,
   insertTutorSessionSchema,
 } from "@shared/schema";
+
+// Validation schema for claim verification
+const verifyClaimsSchema = z.object({
+  responseText: z.string()
+    .min(10, "Response text must be at least 10 characters")
+    .max(10000, "Response text must not exceed 10,000 characters"),
+});
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
@@ -372,23 +380,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/chat/verify-claims', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const { responseText } = req.body;
 
-      if (!responseText || typeof responseText !== 'string') {
-        return res.status(400).json({ message: "responseText is required and must be a string" });
+      // Validate request body with Zod
+      const validation = verifyClaimsSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ 
+          message: "Invalid request body",
+          errors: validation.error.errors 
+        });
       }
+
+      const { responseText } = validation.data;
 
       console.log(`[Verify Claims] Starting verification for user ${userId}, text length: ${responseText.length}`);
 
       // Create agent orchestrator for this user
       const agent = new AgentOrchestrator(userId);
 
-      // Verify the response
-      const verification = await agent.verifyResponse(responseText);
+      // Add timeout wrapper (30 seconds total) with proper cleanup
+      const verificationTask = agent.verifyResponse(responseText);
+      let timeoutId: NodeJS.Timeout | null = null;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('Verification timeout after 30 seconds')), 30000);
+      });
 
-      console.log(`[Verify Claims] Verification complete: ${verification.summary}`);
+      try {
+        // Race between verification and timeout
+        const verification = await Promise.race([
+          verificationTask,
+          timeoutPromise
+        ]);
 
-      res.json(verification);
+        // Cap the number of claims returned (max 10)
+        if (verification.claims.length > 10) {
+          verification.claims = verification.claims.slice(0, 10);
+          verification.verifications = verification.verifications.slice(0, 10);
+          verification.summary += " (Limited to first 10 claims)";
+        }
+
+        console.log(`[Verify Claims] Verification complete: ${verification.summary}`);
+
+        res.json(verification);
+      } catch (verificationError) {
+        // Suppress late rejections from the task if timeout won
+        verificationTask.catch(() => {});
+        throw verificationError;
+      } finally {
+        // Always clear the timeout
+        if (timeoutId) clearTimeout(timeoutId);
+      }
     } catch (error) {
       console.error("[Verify Claims] Error verifying claims:", error);
       const errorMessage = error instanceof Error ? error.message : String(error);
