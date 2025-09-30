@@ -263,20 +263,47 @@ export class DocumentProcessorService {
   }
 
   private async extractFromDOCX(url: string): Promise<{ text: string; metadata: any }> {
-    console.log("Extracting from DOCX:", url);
+    console.log("[DOCX] Extracting from DOCX:", url);
     
-    // In production, use libraries like:
-    // - mammoth for DOCX parsing
-    // - docx-parser
-    
-    return {
-      text: "Simulated DOCX content extraction. In production, this would use mammoth or similar libraries to extract text from Word documents.",
-      metadata: {
-        pages: 5,
-        extractedAt: new Date().toISOString(),
-        method: 'simulated_docx_extraction'
+    try {
+      const mammoth = await import('mammoth');
+      
+      // Fetch the DOCX file
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch DOCX: ${response.statusText}`);
       }
-    };
+      
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      
+      // Extract text using mammoth
+      const result = await mammoth.extractRawText({ buffer });
+      const extractedText = result.text.trim();
+      
+      if (!extractedText) {
+        throw new Error("No text extracted from DOCX");
+      }
+      
+      console.log(`[DOCX] Extracted text length: ${extractedText.length} characters`);
+      
+      // Estimate pages (rough: ~500 words per page)
+      const wordCount = extractedText.split(/\s+/).length;
+      const estimatedPages = Math.max(1, Math.ceil(wordCount / 500));
+      
+      return {
+        text: extractedText,
+        metadata: {
+          pages: estimatedPages,
+          wordCount,
+          extractedAt: new Date().toISOString(),
+          method: 'mammoth_docx_extraction'
+        }
+      };
+    } catch (error) {
+      console.error("[DOCX] Extraction error:", error);
+      throw new Error(`Failed to extract DOCX: ${error.message}`);
+    }
   }
 
   private async extractFromAudio(url: string): Promise<{ text: string; metadata: any }> {
