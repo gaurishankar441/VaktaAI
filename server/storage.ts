@@ -87,6 +87,7 @@ export interface IStorage {
   createChunk(chunk: InsertChunk): Promise<Chunk>;
   updateChunk(id: string, updates: Partial<InsertChunk>): Promise<Chunk | undefined>;
   getDocumentChunks(documentId: string): Promise<Chunk[]>;
+  getChunk(id: string): Promise<Chunk | undefined>;
   getChunksByIds(ids: string[]): Promise<Chunk[]>;
   deleteDocumentChunks(documentId: string): Promise<void>;
   
@@ -327,6 +328,15 @@ export class DatabaseStorage implements IStorage {
       .from(chunks)
       .where(eq(chunks.documentId, documentId))
       .orderBy(asc(chunks.startPage), asc(chunks.startTime));
+  }
+
+  async getChunk(id: string): Promise<Chunk | undefined> {
+    const result = await db
+      .select()
+      .from(chunks)
+      .where(eq(chunks.id, id))
+      .limit(1);
+    return result[0];
   }
 
   async getChunksByIds(ids: string[]): Promise<Chunk[]> {
