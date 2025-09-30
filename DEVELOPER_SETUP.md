@@ -64,8 +64,9 @@ vaktaai/
 │   │   └── flashcardGenerator.ts
 │   ├── routes.ts          # API routes
 │   ├── storage.ts         # Database interface
-│   ├── auth.ts            # Authentication
+│   ├── replitAuth.ts      # Replit Auth (OIDC)
 │   ├── objectStorage.ts   # GCS integration
+│   ├── objectAcl.ts       # Access control lists
 │   ├── index.ts           # Entry point
 │   └── vite.ts            # Vite dev server
 │
@@ -109,6 +110,11 @@ COHERE_API_KEY=...
 # Pinecone (Vector Database)
 PINECONE_API_KEY=...
 PINECONE_INDEX_NAME=vaktaai-embeddings
+
+# Optional: Qdrant (Alternative to Pinecone)
+QDRANT_URL=http://localhost:6333
+QDRANT_API_KEY=...
+QDRANT_COLLECTION_NAME=vaktaai_embeddings
 
 # Google Cloud Storage (Replit Object Storage)
 # These are auto-configured in Replit environment

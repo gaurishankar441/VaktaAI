@@ -670,7 +670,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.user.claims.sub;
       const data = await storage.exportUserData(userId);
       res.setHeader('Content-Type', 'application/json');
-      res.setHeader('Content-Disposition', 'attachment; filename="edushepherd-export.json"');
+      res.setHeader('Content-Disposition', 'attachment; filename="vaktaai-export.json"');
       res.json(data);
     } catch (error) {
       console.error("Error exporting data:", error);

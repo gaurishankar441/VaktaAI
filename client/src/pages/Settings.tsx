@@ -315,7 +315,7 @@ export default function Settings() {
                 <div className="space-y-0.5">
                   <Label>Analytics & Usage Data</Label>
                   <p className="text-sm text-muted-foreground">
-                    Help improve EduShepherd by sharing anonymous usage data
+                    Help improve VaktaAI by sharing anonymous usage data
                   </p>
                 </div>
                 <Switch

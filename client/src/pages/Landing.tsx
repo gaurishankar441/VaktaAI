@@ -167,7 +167,7 @@ export default function Landing() {
               </h2>
               
               <p className="text-lg text-muted-foreground mb-8">
-                EduShepherd combines cutting-edge AI with proven educational methodologies 
+                VaktaAI combines cutting-edge AI with proven educational methodologies 
                 to create a personalized learning experience that adapts to your needs.
               </p>
               
@@ -219,7 +219,7 @@ export default function Landing() {
               <Users className="w-12 h-12 text-green-600 mb-4" />
               <h3 className="text-lg font-semibold mb-2">Trusted by Students</h3>
               <p className="text-muted-foreground">
-                Join thousands of learners who trust EduShepherd for their education.
+                Join thousands of learners who trust VaktaAI for their education.
               </p>
             </div>
             
@@ -239,7 +239,7 @@ export default function Landing() {
         <div className="max-w-4xl mx-auto text-center">
           <h2 className="text-3xl font-bold mb-4">Ready to Transform Your Learning?</h2>
           <p className="text-xl text-muted-foreground mb-8">
-            Join EduShepherd today and experience the future of education.
+            Join VaktaAI today and experience the future of education.
           </p>
           
           <Button 
@@ -264,11 +264,11 @@ export default function Landing() {
             <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
               <GraduationCap className="w-5 h-5 text-primary-foreground" />
             </div>
-            <span className="text-xl font-bold">EduShepherd</span>
+            <span className="text-xl font-bold">VaktaAI</span>
           </div>
           
           <p className="text-muted-foreground">
-            © 2024 EduShepherd. All rights reserved.
+            © 2024 VaktaAI. All rights reserved.
           </p>
         </div>
       </footer>
