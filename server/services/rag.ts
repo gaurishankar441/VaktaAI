@@ -132,47 +132,62 @@ export class RAGService {
     
     const prompt = this.buildRAGPrompt(query, contextText);
 
-    // 🎯 INTELLIGENT TOKEN ALLOCATION based on context & query complexity
-    const estimatedInputTokens = Math.ceil((contextText.length + query.length + 200) / 4); // Rough estimate: 4 chars = 1 token
-    const maxContextTokens = 16000; // GPT-5 has larger context window
+    // 🎯 SMART TOKEN ALLOCATION with proper model limit calculation
+    const MODEL_MAX_TOKENS = 128000; // GPT-5 has 128k context window
+    const SAFETY_MARGIN = 500; // Buffer for token estimation errors
+    const MIN_COMPLETION_TOKENS = 1000; // Minimum tokens needed for useful response
     
-    // Calculate response tokens based on BOTH query complexity AND context richness
-    const queryLength = query.length;
-    const contextSizeTokens = Math.ceil(contextText.length / 4);
+    // Estimate tokens for each component (rough: 1 token ≈ 4 chars)
+    const systemMessage = "You are DocChatAssistant. Use only the provided context to answer questions with proper citations. Always respond in valid JSON format with keys: answer (string) and takeaways (array of strings).";
+    const systemPromptTokens = Math.ceil(systemMessage.length / 4);
+    const userPromptWithContextTokens = Math.ceil(prompt.length / 4); // Prompt already includes context + query
+    
+    // Total input tokens = system message + user prompt (which contains both query + context)
+    const totalInputTokens = systemPromptTokens + userPromptWithContextTokens;
+    
+    // Calculate MAXIMUM available tokens for response
+    let maxAvailableResponseTokens = MODEL_MAX_TOKENS - totalInputTokens - SAFETY_MARGIN;
+    
+    // Log breakdown for debugging
+    const contextTokens = Math.ceil(contextText.length / 4);
+    const queryTokens = Math.ceil(query.length / 4);
+    console.log(`[RAG] Token breakdown: system=${systemPromptTokens}, query=${queryTokens}, context=${contextTokens}, total_input=${totalInputTokens}`);
+    
+    // Determine DESIRED response tokens based on query complexity and context richness
     const chunkCount = context.chunks.length;
-    
-    let responseTokens: number;
+    let desiredResponseTokens: number;
     
     // Base allocation on query complexity
-    if (queryLength < 50) {
-      responseTokens = 1200; // Increased from 1000
-    } else if (queryLength < 150) {
-      responseTokens = 2000; // Increased from 1500
+    if (query.length < 50) {
+      desiredResponseTokens = 1500;
+    } else if (query.length < 150) {
+      desiredResponseTokens = 2500;
     } else {
-      responseTokens = 3000; // Increased from 2500
+      desiredResponseTokens = 3500;
     }
     
-    // BOOST tokens if we have rich context (more chunks = more detailed answer possible)
-    if (chunkCount >= 5 && contextSizeTokens > 2000) {
-      responseTokens += 1000; // Bonus for rich multi-chunk context
-      console.log(`[RAG] Context boost: ${chunkCount} chunks with ${contextSizeTokens} tokens → +1000 response tokens`);
-    } else if (chunkCount >= 3 && contextSizeTokens > 1000) {
-      responseTokens += 500; // Moderate boost
-      console.log(`[RAG] Context boost: ${chunkCount} chunks with ${contextSizeTokens} tokens → +500 response tokens`);
+    // Adjust based on context richness (more chunks = potentially more detailed answer)
+    if (chunkCount >= 5 && contextTokens > 2000) {
+      desiredResponseTokens += 500;
+    } else if (chunkCount >= 3) {
+      desiredResponseTokens += 250;
     }
     
-    // Ensure we don't exceed model limits but allow more headroom
-    const dynamicMaxTokens = Math.min(
-      responseTokens,
-      Math.max(1000, maxContextTokens - estimatedInputTokens - 1000) // Minimum 1000 tokens for response
-    );
+    // CRITICAL: Strict clamp to prevent exceeding available budget
+    // Use Math.min first to ensure we never exceed available, then clamp to minimum 1
+    const dynamicMaxTokens = Math.max(1, Math.min(desiredResponseTokens, maxAvailableResponseTokens));
     
-    console.log(`[RAG] Smart token allocation: input ~${estimatedInputTokens}, context ${contextSizeTokens} (${chunkCount} chunks), response ${dynamicMaxTokens}`);
+    // GUARD: Warn if insufficient tokens but proceed with what's available
+    if (dynamicMaxTokens < MIN_COMPLETION_TOKENS) {
+      console.warn(`[RAG] WARNING: Only ${dynamicMaxTokens} tokens available for response (need ${MIN_COMPLETION_TOKENS}). Context too large. Response may be abbreviated.`);
+    }
+    
+    console.log(`[RAG] Token allocation: desired=${desiredResponseTokens}, available=${maxAvailableResponseTokens}, final=${dynamicMaxTokens} (${chunkCount} chunks)`);
 
     try {
       if (options.streaming && options.res) {
-        // For streaming responses, we need to handle this differently
-        await this.generateStreamingResponse(prompt, options.res);
+        // For streaming responses, pass token limit to prevent truncation
+        await this.generateStreamingResponse(prompt, options.res, dynamicMaxTokens);
         return {
           answer: "Streaming response in progress",
           takeaways: [],
@@ -246,12 +261,14 @@ export class RAGService {
 
   async generateStreamingResponse(
     prompt: string,
-    res: any
+    res: any,
+    maxTokens?: number
   ): Promise<void> {
+    // Use same system prompt as non-streaming for consistent token estimation
     const messages = [
       {
         role: "system",
-        content: "You are DocChatAssistant. Use only the provided context to answer questions with proper citations. Provide a thoughtful, well-structured response."
+        content: "You are DocChatAssistant. Use only the provided context to answer questions with proper citations. Always respond in valid JSON format with keys: answer (string) and takeaways (array of strings)."
       },
       {
         role: "user",
@@ -259,7 +276,7 @@ export class RAGService {
       }
     ];
 
-    await openaiService.createStreamingResponse(messages, res);
+    await openaiService.createStreamingResponse(messages, res, { maxTokens });
   }
 
   private buildContextTextFromCitations(chunks: Chunk[], citations: RAGContext['citations']): { text: string; includedCount: number } {
