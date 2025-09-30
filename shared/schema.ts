@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   index,
+  uniqueIndex,
   jsonb,
   pgTable,
   timestamp,
@@ -139,7 +140,80 @@ export const chatMessages = pgTable("chat_messages", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// Tutor sessions
+// Difficulty levels enum
+export const difficultyEnum = pgEnum('difficulty', ['easy', 'medium', 'hard']);
+
+// Bloom's taxonomy levels enum
+export const bloomLevelEnum = pgEnum('bloom_level', [
+  'remember', 'understand', 'apply', 'analyze', 'evaluate', 'create'
+]);
+
+// Intent type enum
+export const intentTypeEnum = pgEnum('intent_type', [
+  'conceptual', 'application', 'administrative', 'confusion'
+]);
+
+// Personality mode enum
+export const personalityModeEnum = pgEnum('personality_mode', [
+  'friendly_mentor', 'exam_coach', 'encouraging_guide', 'neutral'
+]);
+
+// Step type enum
+export const stepTypeEnum = pgEnum('step_type', [
+  'explain', 'example', 'practice', 'reflection', 'probe'
+]);
+
+// Student profiles for mastery tracking
+export const studentProfiles = pgTable("student_profiles", {
+  userId: varchar("user_id").primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  preferredMode: personalityModeEnum("preferred_mode").default('friendly_mentor'),
+  learningStyle: varchar("learning_style"), // visual, auditory, kinesthetic, reading
+  errorHistory: jsonb("error_history"), // array of common mistakes
+  preferences: jsonb("preferences"), // study preferences
+  totalSessions: integer("total_sessions").default(0),
+  totalTimeSpent: integer("total_time_spent").default(0), // in seconds
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Mastery tracking per topic
+export const masteryScores = pgTable("mastery_scores", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  subject: varchar("subject").notNull(),
+  topic: varchar("topic").notNull(),
+  bloomLevel: bloomLevelEnum("bloom_level").notNull(),
+  score: decimal("score", { precision: 5, scale: 2 }).notNull(), // 0-100
+  attempts: integer("attempts").default(0),
+  correctCount: integer("correct_count").default(0),
+  incorrectCount: integer("incorrect_count").default(0),
+  lastPracticed: timestamp("last_practiced").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  // Unique constraint: one mastery score per user/subject/topic/bloom level
+  uniqueIndex("idx_mastery_unique").on(table.userId, table.subject, table.topic, table.bloomLevel),
+  // Performance index for topic-level queries
+  index("idx_mastery_topic").on(table.userId, table.subject, table.topic),
+]);
+
+// Lesson plans
+export const lessonPlans = pgTable("lesson_plans", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").notNull().references(() => tutorSessions.id, { onDelete: 'cascade' }),
+  learningGoals: text("learning_goals").array(),
+  targetBloomLevel: bloomLevelEnum("target_bloom_level").notNull(),
+  priorKnowledgeCheck: text("prior_knowledge_check"),
+  steps: jsonb("steps").notNull(), // array of {type, content, checkpoints}
+  resources: jsonb("resources"), // array of document references
+  estimatedDuration: integer("estimated_duration"), // in minutes
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  // Unique constraint: one lesson plan per session
+  uniqueIndex("idx_lesson_plan_session").on(table.sessionId),
+]);
+
+// Tutor sessions (updated)
 export const tutorSessions = pgTable("tutor_sessions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
@@ -147,6 +221,10 @@ export const tutorSessions = pgTable("tutor_sessions", {
   gradeLevel: varchar("grade_level").notNull(),
   topic: varchar("topic").notNull(),
   title: varchar("title"),
+  personalityMode: personalityModeEnum("personality_mode").default('friendly_mentor'),
+  currentStepIndex: integer("current_step_index").default(0),
+  masteryState: jsonb("mastery_state"), // current mastery levels
+  sessionMetadata: jsonb("session_metadata"), // additional context
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -157,18 +235,29 @@ export const tutorMessages = pgTable("tutor_messages", {
   sessionId: varchar("session_id").notNull().references(() => tutorSessions.id, { onDelete: 'cascade' }),
   role: varchar("role").notNull(), // 'user' | 'tutor'
   content: text("content").notNull(),
-  messageType: varchar("message_type"), // 'explanation' | 'worked_example' | 'practice' | 'feedback'
+  messageType: varchar("message_type"), // 'explanation' | 'worked_example' | 'practice' | 'feedback' | 'probe' | 'hint'
+  intentType: intentTypeEnum("intent_type"), // classified intent for user messages
+  bloomLevel: bloomLevelEnum("bloom_level"), // target bloom level for this message
+  citations: jsonb("citations"), // source citations
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// Difficulty levels enum
-export const difficultyEnum = pgEnum('difficulty', ['easy', 'medium', 'hard']);
-
-// Bloom's taxonomy levels enum
-export const bloomLevelEnum = pgEnum('bloom_level', [
-  'remember', 'understand', 'apply', 'analyze', 'evaluate', 'create'
-]);
+// Tutor attempts (student performance tracking)
+export const tutorAttempts = pgTable("tutor_attempts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").notNull().references(() => tutorSessions.id, { onDelete: 'cascade' }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  questionText: text("question_text").notNull(),
+  studentAnswer: text("student_answer").notNull(),
+  isCorrect: boolean("is_correct"),
+  confidence: decimal("confidence", { precision: 3, scale: 2 }), // 0-1 student confidence
+  bloomLevel: bloomLevelEnum("bloom_level").notNull(),
+  feedbackGiven: text("feedback_given"),
+  hintsUsed: integer("hints_used").default(0),
+  timeSpent: integer("time_spent"), // in seconds
+  createdAt: timestamp("created_at").defaultNow(),
+});
 
 // Quizzes
 export const quizzes = pgTable("quizzes", {
@@ -275,11 +364,14 @@ export const notes = pgTable("notes", {
 // Relations
 export const usersRelations = relations(users, ({ one, many }) => ({
   settings: one(settings),
+  studentProfile: one(studentProfiles),
   folders: many(folders),
   files: many(files),
   documents: many(documents),
   chatThreads: many(chatThreads),
   tutorSessions: many(tutorSessions),
+  masteryScores: many(masteryScores),
+  tutorAttempts: many(tutorAttempts),
   quizzes: many(quizzes),
   quizAttempts: many(quizAttempts),
   flashcardDecks: many(flashcardDecks),
@@ -355,17 +447,51 @@ export const chatMessagesRelations = relations(chatMessages, ({ one }) => ({
   }),
 }));
 
+export const studentProfilesRelations = relations(studentProfiles, ({ one }) => ({
+  user: one(users, {
+    fields: [studentProfiles.userId],
+    references: [users.id],
+  }),
+}));
+
+export const masteryScoresRelations = relations(masteryScores, ({ one }) => ({
+  user: one(users, {
+    fields: [masteryScores.userId],
+    references: [users.id],
+  }),
+}));
+
+export const lessonPlansRelations = relations(lessonPlans, ({ one }) => ({
+  session: one(tutorSessions, {
+    fields: [lessonPlans.sessionId],
+    references: [tutorSessions.id],
+  }),
+}));
+
 export const tutorSessionsRelations = relations(tutorSessions, ({ one, many }) => ({
   user: one(users, {
     fields: [tutorSessions.userId],
     references: [users.id],
   }),
   messages: many(tutorMessages),
+  lessonPlan: one(lessonPlans),
+  attempts: many(tutorAttempts),
 }));
 
 export const tutorMessagesRelations = relations(tutorMessages, ({ one }) => ({
   session: one(tutorSessions, {
     fields: [tutorMessages.sessionId],
+    references: [tutorSessions.id],
+  }),
+}));
+
+export const tutorAttemptsRelations = relations(tutorAttempts, ({ one }) => ({
+  user: one(users, {
+    fields: [tutorAttempts.userId],
+    references: [users.id],
+  }),
+  session: one(tutorSessions, {
+    fields: [tutorAttempts.sessionId],
     references: [tutorSessions.id],
   }),
 }));
@@ -491,6 +617,24 @@ export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({
   createdAt: true,
 });
 
+export const insertStudentProfileSchema = createInsertSchema(studentProfiles).omit({
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertMasteryScoreSchema = createInsertSchema(masteryScores).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  score: z.union([z.string(), z.number()]).transform(val => String(val)),
+});
+
+export const insertLessonPlanSchema = createInsertSchema(lessonPlans).omit({
+  id: true,
+  createdAt: true,
+});
+
 export const insertTutorSessionSchema = createInsertSchema(tutorSessions).omit({
   id: true,
   createdAt: true,
@@ -500,6 +644,15 @@ export const insertTutorSessionSchema = createInsertSchema(tutorSessions).omit({
 export const insertTutorMessageSchema = createInsertSchema(tutorMessages).omit({
   id: true,
   createdAt: true,
+});
+
+export const insertTutorAttemptSchema = createInsertSchema(tutorAttempts).omit({
+  id: true,
+  createdAt: true,
+}).extend({
+  confidence: z.union([z.string(), z.number()]).optional().transform(val => 
+    val !== undefined ? String(val) : undefined
+  ),
 });
 
 export const insertQuizSchema = createInsertSchema(quizzes).omit({
@@ -545,6 +698,12 @@ export type UpsertUser = z.infer<typeof upsertUserSchema>;
 export type User = typeof users.$inferSelect;
 export type Settings = typeof settings.$inferSelect;
 export type InsertSettings = z.infer<typeof insertSettingsSchema>;
+export type StudentProfile = typeof studentProfiles.$inferSelect;
+export type InsertStudentProfile = z.infer<typeof insertStudentProfileSchema>;
+export type MasteryScore = typeof masteryScores.$inferSelect;
+export type InsertMasteryScore = z.infer<typeof insertMasteryScoreSchema>;
+export type LessonPlan = typeof lessonPlans.$inferSelect;
+export type InsertLessonPlan = z.infer<typeof insertLessonPlanSchema>;
 export type Folder = typeof folders.$inferSelect;
 export type InsertFolder = z.infer<typeof insertFolderSchema>;
 export type File = typeof files.$inferSelect;
@@ -561,6 +720,8 @@ export type TutorSession = typeof tutorSessions.$inferSelect;
 export type InsertTutorSession = z.infer<typeof insertTutorSessionSchema>;
 export type TutorMessage = typeof tutorMessages.$inferSelect;
 export type InsertTutorMessage = z.infer<typeof insertTutorMessageSchema>;
+export type TutorAttempt = typeof tutorAttempts.$inferSelect;
+export type InsertTutorAttempt = z.infer<typeof insertTutorAttemptSchema>;
 export type Quiz = typeof quizzes.$inferSelect;
 export type InsertQuiz = z.infer<typeof insertQuizSchema>;
 export type QuizQuestion = typeof quizQuestions.$inferSelect;

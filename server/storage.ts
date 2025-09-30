@@ -1,6 +1,9 @@
 import {
   users,
   settings,
+  studentProfiles,
+  masteryScores,
+  lessonPlans,
   folders,
   files,
   documents,
@@ -9,6 +12,7 @@ import {
   chatMessages,
   tutorSessions,
   tutorMessages,
+  tutorAttempts,
   quizzes,
   quizQuestions,
   quizAttempts,
@@ -20,6 +24,12 @@ import {
   type UpsertUser,
   type Settings,
   type InsertSettings,
+  type StudentProfile,
+  type InsertStudentProfile,
+  type MasteryScore,
+  type InsertMasteryScore,
+  type LessonPlan,
+  type InsertLessonPlan,
   type Folder,
   type InsertFolder,
   type File,
@@ -36,6 +46,8 @@ import {
   type InsertTutorSession,
   type TutorMessage,
   type InsertTutorMessage,
+  type TutorAttempt,
+  type InsertTutorAttempt,
   type Quiz,
   type InsertQuiz,
   type QuizQuestion,
@@ -62,6 +74,22 @@ export interface IStorage {
   // Settings operations
   getUserSettings(userId: string): Promise<Settings | undefined>;
   upsertUserSettings(settings: InsertSettings): Promise<Settings>;
+  
+  // Student profile operations
+  getStudentProfile(userId: string): Promise<StudentProfile | undefined>;
+  createStudentProfile(profile: InsertStudentProfile): Promise<StudentProfile>;
+  updateStudentProfile(userId: string, updates: Partial<InsertStudentProfile>): Promise<StudentProfile | undefined>;
+  
+  // Mastery score operations
+  getMasteryScore(userId: string, subject: string, topic: string, bloomLevel: string): Promise<MasteryScore | undefined>;
+  getMasteryScoresByTopic(userId: string, subject: string, topic: string): Promise<MasteryScore[]>;
+  createMasteryScore(score: InsertMasteryScore): Promise<MasteryScore>;
+  updateMasteryScore(id: string, updates: Partial<InsertMasteryScore>): Promise<MasteryScore | undefined>;
+  
+  // Lesson plan operations
+  getLessonPlan(sessionId: string): Promise<LessonPlan | undefined>;
+  createLessonPlan(plan: InsertLessonPlan): Promise<LessonPlan>;
+  updateLessonPlan(id: string, updates: Partial<InsertLessonPlan>): Promise<LessonPlan | undefined>;
   
   // Folder operations
   getUserFolders(userId: string, parentId?: string): Promise<Folder[]>;
@@ -110,6 +138,10 @@ export interface IStorage {
   
   createTutorMessage(message: InsertTutorMessage): Promise<TutorMessage>;
   getTutorMessages(sessionId: string): Promise<TutorMessage[]>;
+  
+  // Tutor attempt operations
+  createTutorAttempt(attempt: InsertTutorAttempt): Promise<TutorAttempt>;
+  getSessionAttempts(sessionId: string): Promise<TutorAttempt[]>;
   
   // Quiz operations
   getUserQuizzes(userId: string): Promise<Quiz[]>;
@@ -439,6 +471,110 @@ export class DatabaseStorage implements IStorage {
       .from(tutorMessages)
       .where(eq(tutorMessages.sessionId, sessionId))
       .orderBy(asc(tutorMessages.createdAt));
+  }
+
+  // Student profile operations
+  async getStudentProfile(userId: string): Promise<StudentProfile | undefined> {
+    const [profile] = await db
+      .select()
+      .from(studentProfiles)
+      .where(eq(studentProfiles.userId, userId));
+    return profile;
+  }
+
+  async createStudentProfile(profile: InsertStudentProfile): Promise<StudentProfile> {
+    const [newProfile] = await db.insert(studentProfiles).values(profile).returning();
+    return newProfile;
+  }
+
+  async updateStudentProfile(userId: string, updates: Partial<InsertStudentProfile>): Promise<StudentProfile | undefined> {
+    const [updated] = await db
+      .update(studentProfiles)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(studentProfiles.userId, userId))
+      .returning();
+    return updated;
+  }
+
+  // Mastery score operations
+  async getMasteryScore(userId: string, subject: string, topic: string, bloomLevel: string): Promise<MasteryScore | undefined> {
+    const [score] = await db
+      .select()
+      .from(masteryScores)
+      .where(
+        and(
+          eq(masteryScores.userId, userId),
+          eq(masteryScores.subject, subject),
+          eq(masteryScores.topic, topic),
+          eq(masteryScores.bloomLevel, bloomLevel)
+        )
+      );
+    return score;
+  }
+
+  async getMasteryScoresByTopic(userId: string, subject: string, topic: string): Promise<MasteryScore[]> {
+    return await db
+      .select()
+      .from(masteryScores)
+      .where(
+        and(
+          eq(masteryScores.userId, userId),
+          eq(masteryScores.subject, subject),
+          eq(masteryScores.topic, topic)
+        )
+      )
+      .orderBy(desc(masteryScores.lastPracticed));
+  }
+
+  async createMasteryScore(score: InsertMasteryScore): Promise<MasteryScore> {
+    const [newScore] = await db.insert(masteryScores).values(score).returning();
+    return newScore;
+  }
+
+  async updateMasteryScore(id: string, updates: Partial<InsertMasteryScore>): Promise<MasteryScore | undefined> {
+    const [updated] = await db
+      .update(masteryScores)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(masteryScores.id, id))
+      .returning();
+    return updated;
+  }
+
+  // Lesson plan operations
+  async getLessonPlan(sessionId: string): Promise<LessonPlan | undefined> {
+    const [plan] = await db
+      .select()
+      .from(lessonPlans)
+      .where(eq(lessonPlans.sessionId, sessionId));
+    return plan;
+  }
+
+  async createLessonPlan(plan: InsertLessonPlan): Promise<LessonPlan> {
+    const [newPlan] = await db.insert(lessonPlans).values(plan).returning();
+    return newPlan;
+  }
+
+  async updateLessonPlan(id: string, updates: Partial<InsertLessonPlan>): Promise<LessonPlan | undefined> {
+    const [updated] = await db
+      .update(lessonPlans)
+      .set(updates)
+      .where(eq(lessonPlans.id, id))
+      .returning();
+    return updated;
+  }
+
+  // Tutor attempt operations
+  async createTutorAttempt(attempt: InsertTutorAttempt): Promise<TutorAttempt> {
+    const [newAttempt] = await db.insert(tutorAttempts).values(attempt).returning();
+    return newAttempt;
+  }
+
+  async getSessionAttempts(sessionId: string): Promise<TutorAttempt[]> {
+    return await db
+      .select()
+      .from(tutorAttempts)
+      .where(eq(tutorAttempts.sessionId, sessionId))
+      .orderBy(asc(tutorAttempts.createdAt));
   }
 
   // Quiz operations
