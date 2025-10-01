@@ -68,7 +68,7 @@ Respond ONLY with JSON:
         ],
         {
           responseFormat: { type: "json_object" },
-          maxTokens: 200,
+          maxTokens: 500,
           temperature: 0.3,
         }
       );
