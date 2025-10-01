@@ -21,7 +21,7 @@ import {
   flashcardReviews,
   notes,
   type User,
-  type UpsertUser,
+  type InsertUser,
   type Settings,
   type InsertSettings,
   type StudentProfile,
@@ -67,9 +67,10 @@ import { db } from "./db";
 import { eq, desc, and, gte, lte, like, or, sql, asc, inArray } from "drizzle-orm";
 
 export interface IStorage {
-  // User operations (required for Replit Auth)
+  // User operations (SMS OTP authentication)
   getUser(id: string): Promise<User | undefined>;
-  upsertUser(user: UpsertUser): Promise<User>;
+  getUserByPhone(phoneE164: string): Promise<User | undefined>;
+  createUser(user: InsertUser): Promise<User>;
   
   // Settings operations
   getUserSettings(userId: string): Promise<Settings | undefined>;
@@ -199,17 +200,15 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  async upsertUser(userData: UpsertUser): Promise<User> {
+  async getUserByPhone(phoneE164: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.phoneE164, phoneE164));
+    return user;
+  }
+
+  async createUser(userData: InsertUser): Promise<User> {
     const [user] = await db
       .insert(users)
       .values(userData)
-      .onConflictDoUpdate({
-        target: users.id,
-        set: {
-          ...userData,
-          updatedAt: new Date(),
-        },
-      })
       .returning();
     return user;
   }

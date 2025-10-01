@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { setupAuth, isAuthenticated } from "./replitAuth";
+// Removed Replit Auth - using SMS OTP authentication
 import { storage } from "./storage";
 import { ObjectStorageService, ObjectNotFoundError } from "./objectStorage";
 import { ObjectPermission } from "./objectAcl";
@@ -10,6 +10,8 @@ import { quizGeneratorService } from "./services/quizGenerator";
 import { flashcardGeneratorService } from "./services/flashcardGenerator";
 import { documentProcessorService } from "./services/documentProcessor";
 import { AgentOrchestrator } from "./agent/orchestrator";
+import { twilioService } from "./services/twilio";
+import { otpRateLimiter } from "./middleware/rateLimiter";
 import { z } from "zod";
 import { 
   insertSettingsSchema,
@@ -27,28 +29,127 @@ const verifyClaimsSchema = z.object({
     .max(10000, "Response text must not exceed 10,000 characters"),
 });
 
-export async function registerRoutes(app: Express): Promise<Server> {
-  // Auth middleware
-  await setupAuth(app);
+// Simple session-based auth middleware
+function requireAuth(req: any, res: any, next: any) {
+  if (req.session?.userId) {
+    return next();
+  }
+  return res.status(401).json({ error: 'Unauthorized' });
+}
 
-  // Auth routes
-  app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
+export async function registerRoutes(app: Express): Promise<Server> {
+  // SMS OTP Auth routes
+  app.post('/api/auth/otp/start', otpRateLimiter, async (req, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const { phone } = req.body;
+      
+      if (!phone) {
+        return res.status(400).json({ error: 'Phone number is required' });
+      }
+
+      const phoneE164 = twilioService.normalizePhoneNumber(phone);
+      
+      if (!twilioService.validateE164(phoneE164)) {
+        return res.status(400).json({ error: 'Invalid phone number format' });
+      }
+
+      const result = await twilioService.sendOTP(phoneE164);
+      
+      res.json({
+        requestId: result.requestId,
+        expiresInSeconds: result.expiresInSeconds,
+      });
+    } catch (error: any) {
+      console.error('[OTP Start] Error:', error.message);
+      res.status(500).json({ error: error.message || 'Failed to send OTP' });
+    }
+  });
+
+  app.post('/api/auth/otp/verify', async (req, res) => {
+    try {
+      const { phone, code } = req.body;
+      
+      if (!phone || !code) {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'Phone number and code are required' 
+        });
+      }
+
+      const phoneE164 = twilioService.normalizePhoneNumber(phone);
+      const verifyResult = await twilioService.verifyOTP(phoneE164, code);
+
+      if (!verifyResult.success) {
+        return res.json({ 
+          success: false, 
+          error: 'INVALID_OTP' 
+        });
+      }
+
+      let user = await storage.getUserByPhone(phoneE164);
+      
+      if (!user) {
+        user = await storage.createUser({ phoneE164 });
+      }
+
+      req.session.regenerate((err: any) => {
+        if (err) {
+          console.error('[OTP Verify] Session regeneration error:', err);
+          return res.status(500).json({ 
+            success: false, 
+            error: 'Session creation failed' 
+          });
+        }
+
+        req.session.userId = user.id;
+        
+        res.json({ 
+          success: true, 
+          user: {
+            id: user.id,
+            phoneE164: user.phoneE164,
+            planTier: user.planTier,
+          }
+        });
+      });
+    } catch (error: any) {
+      console.error('[OTP Verify] Error:', error.message);
+      res.status(500).json({ 
+        success: false, 
+        error: 'Verification failed' 
+      });
+    }
+  });
+
+  app.get('/api/auth/user', requireAuth, async (req: any, res) => {
+    try {
+      const userId = req.session.userId;
       const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
       res.json(user);
     } catch (error) {
       console.error("Error fetching user:", error);
-      res.status(500).json({ message: "Failed to fetch user" });
+      res.status(500).json({ error: "Failed to fetch user" });
     }
+  });
+
+  app.post('/api/auth/logout', (req: any, res) => {
+    req.session.destroy((err: any) => {
+      if (err) {
+        return res.status(500).json({ error: 'Logout failed' });
+      }
+      res.json({ success: true });
+    });
   });
 
   // Object Storage routes
   const objectStorageService = new ObjectStorageService();
 
   // Serve private objects with ACL check
-  app.get("/objects/:objectPath(*)", isAuthenticated, async (req: any, res) => {
-    const userId = req.user?.claims?.sub;
+  app.get("/objects/:objectPath(*)", requireAuth, async (req: any, res) => {
+    const userId = req.session?.userId;
     try {
       const objectFile = await objectStorageService.getObjectEntityFile(req.path);
       const canAccess = await objectStorageService.canAccessObjectEntity({
@@ -70,7 +171,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get upload URL for file upload
-  app.post("/api/objects/upload", isAuthenticated, async (req, res) => {
+  app.post("/api/objects/upload", requireAuth, async (req, res) => {
     try {
       const uploadURL = await objectStorageService.getObjectEntityUploadURL();
       res.json({ uploadURL });
@@ -81,12 +182,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Update file after upload
-  app.put("/api/files", isAuthenticated, async (req: any, res) => {
+  app.put("/api/files", requireAuth, async (req: any, res) => {
     if (!req.body.fileURL || !req.body.filename) {
       return res.status(400).json({ error: "fileURL and filename are required" });
     }
 
-    const userId = req.user?.claims?.sub;
+    const userId = req.session?.userId;
 
     try {
       const objectPath = await objectStorageService.trySetObjectEntityAclPolicy(
@@ -118,9 +219,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Settings routes
-  app.get('/api/settings', isAuthenticated, async (req: any, res) => {
+  app.get('/api/settings', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId;
       const settings = await storage.getUserSettings(userId);
       res.json(settings);
     } catch (error) {
@@ -129,9 +230,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/settings', isAuthenticated, async (req: any, res) => {
+  app.post('/api/settings', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId;
       const settingsData = insertSettingsSchema.parse({
         userId,
         ...req.body,
@@ -145,9 +246,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Folder routes
-  app.get('/api/folders', isAuthenticated, async (req: any, res) => {
+  app.get('/api/folders', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId;
       const { parentId } = req.query;
       const folders = await storage.getUserFolders(userId, parentId);
       res.json(folders);
@@ -157,9 +258,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/folders', isAuthenticated, async (req: any, res) => {
+  app.post('/api/folders', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId;
       const folderData = insertFolderSchema.parse({
         userId,
         ...req.body,
@@ -172,7 +273,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete('/api/folders/:id', isAuthenticated, async (req, res) => {
+  app.delete('/api/folders/:id', requireAuth, async (req, res) => {
     try {
       await storage.deleteFolder(req.params.id);
       res.json({ success: true });
@@ -183,9 +284,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // File routes
-  app.get('/api/files', isAuthenticated, async (req: any, res) => {
+  app.get('/api/files', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId;
       const { folderId } = req.query;
       const files = await storage.getUserFiles(userId, folderId);
       res.json(files);
@@ -195,7 +296,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete('/api/files/:id', isAuthenticated, async (req, res) => {
+  app.delete('/api/files/:id', requireAuth, async (req, res) => {
     try {
       await storage.deleteFile(req.params.id);
       res.json({ success: true });
@@ -206,9 +307,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Document routes
-  app.get('/api/documents', isAuthenticated, async (req: any, res) => {
+  app.get('/api/documents', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId;
       const documents = await storage.getUserDocuments(userId);
       res.json(documents);
     } catch (error) {
@@ -217,9 +318,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/documents/process', isAuthenticated, async (req: any, res) => {
+  app.post('/api/documents/process', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId;
       const { fileId, sourceType, sourceUrl, title } = req.body;
 
       const result = await documentProcessorService.processDocument(
@@ -237,7 +338,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/documents/:id/status', isAuthenticated, async (req, res) => {
+  app.get('/api/documents/:id/status', requireAuth, async (req, res) => {
     try {
       const status = await documentProcessorService.getProcessingStatus(req.params.id);
       res.json(status);
@@ -247,7 +348,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete('/api/documents/:id', isAuthenticated, async (req, res) => {
+  app.delete('/api/documents/:id', requireAuth, async (req, res) => {
     try {
       await documentProcessorService.deleteDocument(req.params.id);
       res.json({ success: true });
@@ -258,9 +359,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Chat routes
-  app.get('/api/chat/threads', isAuthenticated, async (req: any, res) => {
+  app.get('/api/chat/threads', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId;
       const threads = await storage.getUserChatThreads(userId);
       res.json(threads);
     } catch (error) {
@@ -269,9 +370,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/chat/threads', isAuthenticated, async (req: any, res) => {
+  app.post('/api/chat/threads', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId;
       const threadData = insertChatThreadSchema.parse({
         userId,
         ...req.body,
@@ -284,7 +385,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/chat/threads/:id/messages', isAuthenticated, async (req, res) => {
+  app.get('/api/chat/threads/:id/messages', requireAuth, async (req, res) => {
     try {
       const messages = await storage.getChatMessages(req.params.id);
       res.json(messages);
@@ -294,7 +395,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/chat/query', isAuthenticated, async (req: any, res) => {
+  app.post('/api/chat/query', requireAuth, async (req: any, res) => {
     try {
       const { query, documentIds, threadId, streaming = false } = req.body;
 
@@ -354,7 +455,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/chat/summary', isAuthenticated, async (req: any, res) => {
+  app.post('/api/chat/summary', requireAuth, async (req: any, res) => {
     try {
       const { documentIds } = req.body;
       const summary = await ragService.generateSummary(documentIds);
@@ -365,7 +466,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/chat/highlights', isAuthenticated, async (req: any, res) => {
+  app.post('/api/chat/highlights', requireAuth, async (req: any, res) => {
     try {
       const { documentIds } = req.body;
       const highlights = await ragService.extractHighlights(documentIds);
@@ -377,9 +478,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Claim verification endpoint
-  app.post('/api/chat/verify-claims', isAuthenticated, async (req: any, res) => {
+  app.post('/api/chat/verify-claims', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId;
 
       // Validate request body with Zod
       const validation = verifyClaimsSchema.safeParse(req.body);
@@ -437,9 +538,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Tutor routes
-  app.get('/api/tutor/sessions', isAuthenticated, async (req: any, res) => {
+  app.get('/api/tutor/sessions', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId;
       const sessions = await aiTutorService.getUserTutorSessions(userId);
       res.json(sessions);
     } catch (error) {
@@ -448,9 +549,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/tutor/sessions', isAuthenticated, async (req: any, res) => {
+  app.post('/api/tutor/sessions', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId;
       const { subject, gradeLevel, topic } = req.body;
       const session = await aiTutorService.createTutorSession(userId, subject, gradeLevel, topic);
       res.json(session);
@@ -460,7 +561,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/tutor/sessions/:id', isAuthenticated, async (req, res) => {
+  app.get('/api/tutor/sessions/:id', requireAuth, async (req, res) => {
     try {
       const sessionData = await aiTutorService.getTutorSession(req.params.id);
       if (!sessionData) {
@@ -473,11 +574,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/tutor/sessions/:id/message', isAuthenticated, async (req: any, res) => {
+  app.post('/api/tutor/sessions/:id/message', requireAuth, async (req: any, res) => {
     try {
       const { content, streaming = false } = req.body;
       const sessionId = req.params.id;
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId;
 
       if (streaming) {
         // Note: Streaming not yet implemented with agentic orchestrator
@@ -497,11 +598,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/tutor/sessions/:id/answer', isAuthenticated, async (req: any, res) => {
+  app.post('/api/tutor/sessions/:id/answer', requireAuth, async (req: any, res) => {
     try {
       const { studentAnswer } = req.body;
       const sessionId = req.params.id;
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId;
 
       // Process answer with agentic feedback using SessionOrchestrator
       const feedback = await aiTutorService.processTutorAnswer(
@@ -517,9 +618,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Quiz routes
-  app.get('/api/quizzes', isAuthenticated, async (req: any, res) => {
+  app.get('/api/quizzes', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId;
       const quizzes = await quizGeneratorService.getUserQuizzes(userId);
       res.json(quizzes);
     } catch (error) {
@@ -528,9 +629,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/quizzes/generate', isAuthenticated, async (req: any, res) => {
+  app.post('/api/quizzes/generate', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId;
       const quiz = await quizGeneratorService.generateQuiz(userId, req.body);
       res.json(quiz);
     } catch (error) {
@@ -539,7 +640,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/quizzes/:id', isAuthenticated, async (req, res) => {
+  app.get('/api/quizzes/:id', requireAuth, async (req, res) => {
     try {
       const quizData = await quizGeneratorService.getQuiz(req.params.id);
       if (!quizData) {
@@ -552,9 +653,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/quizzes/:id/attempt', isAuthenticated, async (req: any, res) => {
+  app.post('/api/quizzes/:id/attempt', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId;
       const { answers, timeSpent } = req.body;
       const result = await quizGeneratorService.submitQuizAttempt(
         userId,
@@ -569,9 +670,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/quizzes/:id/attempts', isAuthenticated, async (req: any, res) => {
+  app.get('/api/quizzes/:id/attempts', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId;
       const attempts = await quizGeneratorService.getUserQuizAttempts(userId, req.params.id);
       res.json(attempts);
     } catch (error) {
@@ -581,9 +682,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Flashcard routes
-  app.get('/api/flashcards/decks', isAuthenticated, async (req: any, res) => {
+  app.get('/api/flashcards/decks', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId;
       const decks = await flashcardGeneratorService.getUserFlashcardDecks(userId);
       res.json(decks);
     } catch (error) {
@@ -592,9 +693,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/flashcards/generate', isAuthenticated, async (req: any, res) => {
+  app.post('/api/flashcards/generate', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId;
       const deck = await flashcardGeneratorService.generateFlashcardDeck(userId, req.body);
       res.json(deck);
     } catch (error) {
@@ -603,7 +704,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/flashcards/decks/:id', isAuthenticated, async (req, res) => {
+  app.get('/api/flashcards/decks/:id', requireAuth, async (req, res) => {
     try {
       const deckData = await flashcardGeneratorService.getFlashcardDeck(req.params.id);
       if (!deckData) {
@@ -616,9 +717,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/flashcards/due', isAuthenticated, async (req: any, res) => {
+  app.get('/api/flashcards/due', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId;
       const { deckId } = req.query;
       const dueCards = await flashcardGeneratorService.getDueFlashcards(userId, deckId);
       res.json(dueCards);
@@ -628,9 +729,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/flashcards/:id/review', isAuthenticated, async (req: any, res) => {
+  app.post('/api/flashcards/:id/review', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId;
       const { rating } = req.body;
       const result = await flashcardGeneratorService.reviewFlashcard(
         userId,
@@ -644,9 +745,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/flashcards/stats', isAuthenticated, async (req: any, res) => {
+  app.get('/api/flashcards/stats', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId;
       const stats = await flashcardGeneratorService.getFlashcardStats(userId);
       res.json(stats);
     } catch (error) {
@@ -656,9 +757,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Notes routes
-  app.get('/api/notes', isAuthenticated, async (req: any, res) => {
+  app.get('/api/notes', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId;
       const { search } = req.query;
       
       let notes;
@@ -675,9 +776,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/notes', isAuthenticated, async (req: any, res) => {
+  app.post('/api/notes', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId;
       const noteData = insertNoteSchema.parse({
         userId,
         ...req.body,
@@ -690,7 +791,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/notes/:id', isAuthenticated, async (req, res) => {
+  app.get('/api/notes/:id', requireAuth, async (req, res) => {
     try {
       const note = await storage.getNote(req.params.id);
       if (!note) {
@@ -703,7 +804,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put('/api/notes/:id', isAuthenticated, async (req, res) => {
+  app.put('/api/notes/:id', requireAuth, async (req, res) => {
     try {
       const note = await storage.updateNote(req.params.id, req.body);
       res.json(note);
@@ -713,7 +814,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete('/api/notes/:id', isAuthenticated, async (req, res) => {
+  app.delete('/api/notes/:id', requireAuth, async (req, res) => {
     try {
       await storage.deleteNote(req.params.id);
       res.json({ success: true });
@@ -724,9 +825,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Stats routes
-  app.get('/api/stats', isAuthenticated, async (req: any, res) => {
+  app.get('/api/stats', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId;
       const stats = await storage.getUserStats(userId);
       res.json(stats);
     } catch (error) {
@@ -736,9 +837,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Data export routes
-  app.get('/api/export', isAuthenticated, async (req: any, res) => {
+  app.get('/api/export', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId;
       const data = await storage.exportUserData(userId);
       res.setHeader('Content-Type', 'application/json');
       res.setHeader('Content-Disposition', 'attachment; filename="vaktaai-export.json"');
@@ -749,9 +850,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete('/api/account', isAuthenticated, async (req: any, res) => {
+  app.delete('/api/account', requireAuth, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.session.userId;
       await storage.deleteUserData(userId);
       res.json({ success: true });
     } catch (error) {

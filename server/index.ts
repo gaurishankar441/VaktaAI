@@ -1,12 +1,49 @@
 import express, { type Request, Response, NextFunction } from "express";
+import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
+import pg from "pg";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 
 const app = express();
 
+// PostgreSQL session store configuration
+const PgSession = connectPgSimple(session);
+const pgPool = new pg.Pool({
+  connectionString: process.env.DATABASE_URL,
+});
+
+// Session configuration
+const sessionSecret = process.env.SESSION_SECRET || 'dev-secret-change-in-production';
+const isProduction = process.env.NODE_ENV === 'production';
+
+app.set('trust proxy', 1); // Trust first proxy
+
+app.use(session({
+  store: new PgSession({
+    pool: pgPool,
+    tableName: 'sessions',
+  }),
+  secret: sessionSecret,
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: 'lax',
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  },
+}));
+
 declare module 'http' {
   interface IncomingMessage {
     rawBody: unknown
+  }
+}
+
+declare module 'express-session' {
+  interface SessionData {
+    userId: string;
   }
 }
 app.use(express.json({

@@ -18,7 +18,7 @@ import Flashcards from "@/pages/Flashcards";
 import Resources from "@/pages/Resources";
 import Settings from "@/pages/Settings";
 import Documents from "@/pages/Documents";
-import Landing from "@/pages/Landing";
+import Login from "@/pages/Login";
 import NotFound from "@/pages/not-found";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
@@ -29,11 +29,11 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
     if (!isLoading && !isAuthenticated) {
       toast({
         title: "Unauthorized",
-        description: "You are logged out. Logging in again...",
+        description: "Please log in to continue...",
         variant: "destructive",
       });
       setTimeout(() => {
-        window.location.href = "/api/login";
+        window.location.href = "/login";
       }, 500);
       return;
     }
@@ -73,7 +73,8 @@ function Router() {
 
   return (
     <Switch>
-      <Route path="/" component={isAuthenticated ? () => <ProtectedRoute component={Dashboard} /> : Landing} />
+      <Route path="/login" component={Login} />
+      <Route path="/" component={isAuthenticated ? () => <ProtectedRoute component={Dashboard} /> : Login} />
       <Route path="/dashboard" component={() => <ProtectedRoute component={Dashboard} />} />
       <Route path="/documents" component={() => <ProtectedRoute component={Documents} />} />
       <Route path="/chat" component={() => <ProtectedRoute component={Chat} />} />
