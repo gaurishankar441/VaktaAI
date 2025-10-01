@@ -79,7 +79,7 @@ export default function Login() {
     if (!otp.trim()) {
       toast({
         title: 'OTP required',
-        description: 'Please enter the 6-digit code',
+        description: 'Please enter the verification code',
         variant: 'destructive',
       });
       return;
@@ -141,7 +141,7 @@ export default function Login() {
           <CardDescription className="text-center">
             {step === 'phone'
               ? 'Enter your mobile number to get started'
-              : `Enter the 6-digit code sent to ${phone}`}
+              : `Enter the verification code sent to ${phone}`}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -159,7 +159,7 @@ export default function Login() {
                   onKeyPress={(e) => e.key === 'Enter' && handleSendOTP()}
                 />
                 <p className="text-sm text-muted-foreground">
-                  We'll send you a 6-digit verification code
+                  We'll send you a verification code via SMS
                 </p>
               </div>
               <Button
@@ -186,11 +186,11 @@ export default function Login() {
                   id="otp"
                   data-testid="input-otp"
                   type="text"
-                  placeholder="Enter 6-digit code"
+                  placeholder="Enter verification code"
                   value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 10))}
                   onKeyPress={(e) => e.key === 'Enter' && handleVerifyOTP()}
-                  maxLength={6}
+                  maxLength={10}
                 />
               </div>
               <Button
