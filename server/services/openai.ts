@@ -88,6 +88,7 @@ export class OpenAIService {
       model?: string;
       responseFormat?: { type: "json_object" };
       maxTokens?: number;
+      temperature?: number;
     } = {}
   ): Promise<ChatResponse> {
     try {
@@ -100,6 +101,7 @@ export class OpenAIService {
         messages: messages as any,
         response_format: options.responseFormat,
         max_completion_tokens: options.maxTokens,
+        temperature: options.temperature,
       });
 
       console.log("[OpenAI] Response received");

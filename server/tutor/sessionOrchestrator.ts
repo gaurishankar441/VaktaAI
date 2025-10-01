@@ -5,6 +5,7 @@ import { feedbackEngine, type StructuredFeedback } from './feedbackEngine.js';
 import { studentModel } from './studentModel.js';
 import { adaptationEngine, type AdaptationDecision } from './adaptationEngine.js';
 import { storage } from '../storage.js';
+import { openaiService } from '../services/openai.js';
 
 export interface OrchestrationResult {
   response: string;
@@ -57,28 +58,18 @@ export class SessionOrchestrator {
       }
 
       case 'conceptual': {
-        // Student wants to understand a concept
-        // For now, provide direct explanation using probing instead of full lesson plan dump
-        
-        const lastTutorMessage = messages
-          .filter(m => m.role === 'tutor')
-          .pop();
-
-        const probeResponse = await probeEngine.generateProbe(
-          topic,
-          currentBloomLevel,
+        // Student wants to understand a concept - provide direct explanation
+        const explanation = await this.generateExplanation(
           userMessage,
-          lastTutorMessage?.content
+          topic,
+          subject,
+          gradeLevel,
+          currentBloomLevel
         );
 
-        // Use the Socratic probe to engage step-by-step
-        const probeQuestion = probeResponse.probe.question || 
-          `Let me help you understand this concept. ${userMessage}. What do you already know about this?`;
-
         return {
-          response: probeQuestion,
-          messageType: 'socratic_probe',
-          probe: probeResponse
+          response: explanation,
+          messageType: 'explanation'
         };
       }
 
@@ -227,6 +218,57 @@ export class SessionOrchestrator {
       adaptation,
       masteryUpdate: true
     };
+  }
+
+  /**
+   * Generate simple, direct explanation for conceptual questions
+   */
+  private async generateExplanation(
+    userQuestion: string,
+    topic: string,
+    subject: string,
+    gradeLevel: string,
+    bloomLevel: BloomLevel
+  ): Promise<string> {
+    const prompt = `You are a friendly tutor. The student asked: "${userQuestion}"
+
+CONTEXT:
+- Subject: ${subject}
+- Topic: ${topic}
+- Grade Level: ${gradeLevel}
+- Target Understanding: ${bloomLevel}
+
+INSTRUCTIONS:
+1. Give a clear, simple explanation (2-3 short paragraphs max)
+2. Use everyday language, avoid jargon
+3. Include a simple example if helpful
+4. End with ONE engaging follow-up question to check understanding
+
+Keep it concise and friendly. Student wants to understand, not be overwhelmed.`;
+
+    try {
+      const response = await openaiService.chatCompletion(
+        [
+          {
+            role: "system",
+            content: "You are a friendly, clear tutor who explains concepts simply and engagingly."
+          },
+          {
+            role: "user",
+            content: prompt
+          }
+        ],
+        {
+          maxTokens: 1500,
+          temperature: 0.7,
+        }
+      );
+
+      return response.content || `Let me help you understand ${topic}. Can you tell me what you already know about it?`;
+    } catch (error) {
+      console.error("Explanation generation failed:", error);
+      return `I'd be happy to explain ${topic}! What specific aspect would you like to understand better?`;
+    }
   }
 
   /**
