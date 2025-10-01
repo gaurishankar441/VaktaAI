@@ -1,6 +1,6 @@
 import { openaiService } from '../services/openai.js';
 
-export type IntentType = 'conceptual' | 'application' | 'administrative' | 'confusion';
+export type IntentType = 'conceptual' | 'application' | 'administrative' | 'confusion' | 'answer_attempt';
 
 export interface IntentClassification {
   intent: IntentType;
@@ -25,25 +25,31 @@ Recent conversation: ${sessionContext.recentMessages?.slice(-3).join(' | ') || '
 
     const prompt = `Classify the student's query into ONE of these intent types:
 
-1. CONCEPTUAL - Student wants to understand an idea, theory, or concept
+1. ANSWER_ATTEMPT - Student is providing an answer, solution, or response to a previous question
+   Examples: "It's 42", "The answer is photosynthesis", "I think it's...", "V = IR", "x = 5"
+   IMPORTANT: If recent conversation shows tutor asked a question, student is likely answering it
+
+2. CONCEPTUAL - Student wants to understand an idea, theory, or concept
    Examples: "What is photosynthesis?", "Explain Newton's laws", "How does this work?"
 
-2. APPLICATION - Student wants to solve a problem or apply knowledge
+3. APPLICATION - Student wants to solve a problem or apply knowledge
    Examples: "Can you help me solve this equation?", "How do I calculate this?", "What steps should I follow?"
-
-3. ADMINISTRATIVE - Student asks about syllabus, exam, deadlines, course info
-   Examples: "When is the test?", "What topics are covered?", "Is this in the exam?"
 
 4. CONFUSION - Student is confused, stuck, or didn't understand previous explanation
    Examples: "I don't get it", "This is confusing", "Can you explain again?", "I'm stuck"
+
+5. ADMINISTRATIVE - Student asks about syllabus, exam, deadlines, course info
+   Examples: "When is the test?", "What topics are covered?", "Is this in the exam?"
 
 ${contextInfo}
 
 Student Query: "${userQuery}"
 
+CRITICAL: Check if recent conversation shows tutor asking a question. If yes, student is likely providing ANSWER_ATTEMPT.
+
 Respond ONLY with JSON:
 {
-  "intent": "conceptual|application|administrative|confusion",
+  "intent": "answer_attempt|conceptual|application|confusion|administrative",
   "confidence": 0.0-1.0,
   "reasoning": "brief explanation why you chose this intent"
 }`;

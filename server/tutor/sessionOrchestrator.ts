@@ -51,6 +51,11 @@ export class SessionOrchestrator {
 
     // Step 5: Handle based on intent type
     switch (intent.intent) {
+      case 'answer_attempt': {
+        // Student is providing an answer - process it with feedback
+        return await this.processAnswer(userId, sessionId, userMessage, subject, topic);
+      }
+
       case 'conceptual': {
         // Student wants to understand a concept - provide lesson plan
         const lessonPlan = await lessonPlanner.createLessonPlan(
@@ -109,10 +114,22 @@ export class SessionOrchestrator {
       }
 
       default: {
-        // Fallback for unknown intents
+        // Fallback for unknown intents - provide Socratic probe instead of generic message
+        const lastTutorMessage = messages
+          .filter(m => m.role === 'tutor')
+          .pop();
+
+        const probeResponse = await probeEngine.generateProbe(
+          topic,
+          currentBloomLevel,
+          userMessage,
+          lastTutorMessage?.content
+        );
+
         return {
-          response: `I'm here to help you learn ${topic} in ${subject}. Could you please clarify what you'd like to understand or practice?`,
-          messageType: 'explanation'
+          response: probeResponse.probe.question,
+          messageType: 'socratic_probe',
+          probe: probeResponse
         };
       }
     }
