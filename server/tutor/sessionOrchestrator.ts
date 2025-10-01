@@ -98,8 +98,11 @@ export class SessionOrchestrator {
           lastTutorMessage?.content
         );
 
+        // Ensure response is not empty
+        const probeQuestion = probeResponse.probe.question || `Let's think about ${topic}. Can you tell me what you understand so far?`;
+
         return {
-          response: probeResponse.probe.question,
+          response: probeQuestion,
           messageType: 'socratic_probe',
           probe: probeResponse
         };
@@ -119,18 +122,30 @@ export class SessionOrchestrator {
           .filter(m => m.role === 'tutor')
           .pop();
 
-        const probeResponse = await probeEngine.generateProbe(
-          topic,
-          currentBloomLevel,
-          userMessage,
-          lastTutorMessage?.content
-        );
+        try {
+          const probeResponse = await probeEngine.generateProbe(
+            topic,
+            currentBloomLevel,
+            userMessage,
+            lastTutorMessage?.content
+          );
 
-        return {
-          response: probeResponse.probe.question,
-          messageType: 'socratic_probe',
-          probe: probeResponse
-        };
+          // Ensure response is not empty
+          const probeQuestion = probeResponse.probe.question || `I'm here to help you learn ${topic}. What would you like to explore?`;
+
+          return {
+            response: probeQuestion,
+            messageType: 'socratic_probe',
+            probe: probeResponse
+          };
+        } catch (error) {
+          console.error('[Orchestrator] Probe generation failed in fallback:', error);
+          // Return safe fallback
+          return {
+            response: `I'm here to help you learn ${topic}. What would you like to explore?`,
+            messageType: 'explanation'
+          };
+        }
       }
     }
   }

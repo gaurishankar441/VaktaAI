@@ -79,19 +79,32 @@ Respond ONLY with JSON:
 
       const parsed = JSON.parse(response.content);
       
+      // Validate that question is not empty
+      const question = parsed.question?.trim() || `Can you explain your understanding of ${topic}?`;
+      
       return {
         probe: {
-          question: parsed.question,
-          bloomLevel: parsed.bloomLevel as BloomLevel,
-          hints: parsed.hints,
-          expectedAnswer: parsed.expectedAnswer,
-          scaffoldingType: parsed.scaffoldingType
+          question,
+          bloomLevel: parsed.bloomLevel as BloomLevel || currentBloomLevel,
+          hints: parsed.hints || ["Think about the key concepts", "Consider what you already know", "Break it down step by step"],
+          expectedAnswer: parsed.expectedAnswer || "Student discovers through guided questioning",
+          scaffoldingType: parsed.scaffoldingType || 'probing'
         },
-        reasoning: parsed.reasoning
+        reasoning: parsed.reasoning || "Guiding student through Socratic questioning"
       };
     } catch (error) {
       console.error("Probe generation failed:", error);
-      throw new Error("Failed to generate Socratic probe");
+      // Return fallback probe instead of throwing
+      return {
+        probe: {
+          question: `Can you tell me what you understand about ${topic}?`,
+          bloomLevel: currentBloomLevel,
+          hints: ["Think about what you've learned", "Consider the main concepts", "Try breaking it into smaller parts"],
+          expectedAnswer: "Student understanding of topic",
+          scaffoldingType: 'clarifying'
+        },
+        reasoning: "Fallback probe due to generation error"
+      };
     }
   }
 
