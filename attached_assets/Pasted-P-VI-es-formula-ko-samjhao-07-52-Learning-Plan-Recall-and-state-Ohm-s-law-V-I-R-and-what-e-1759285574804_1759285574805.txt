@@ -1,0 +1,47 @@
+P=VI es formula ko samjhao
+07:52
+
+# Learning Plan: Recall and state Ohm's law (V = I × R) and what each symbol represents (V, I, R).
+
+Learning Goals:
+• Recall and state Ohm's law (V = I × R) and what each symbol represents (V, I, R).
+• Recall the SI units for voltage (volt, V), current (ampere, A), and resistance (ohm, Ω), including common prefixes (milli-, kilo-).
+• Recognize that for an ohmic conductor, voltage is proportional to current when resistance is constant.
+• Rearrange V = IR to isolate any one variable in simple numeric cases.
+
+Prior Knowledge Check:
+Without looking anything up: list any electrical quantities you know (e.g., voltage, current, resistance) and their SI units. Briefly define one.
+
+Learning Path:
+
+1. PROBE (remember)
+Quick diagnostic: 1) What is electric current and its unit? 2) What is voltage and its unit? 3) Which symbol represents resistance? 4) Have you ever built a simple circuit (battery–resistor–bulb)?
+✓ Checkpoints: At least 70% can name two of the three quantities and one correct unit., Document misconceptions (e.g., 'current gets used up', confusing volts with amps) to address in the next step.
+
+2. EXPLAIN (remember)
+Introduce Ohm's law with minimal load: Core statement: For an ohmic conductor, the potential difference (V) across it equals the product of current (I) through it and its resistance (R): V = I × R. Symbols and units: V in volts (V), I in amperes (A), R in ohms (Ω). Proportionality: If R is constant, V ∝ I (a straight-line V–I graph through the origin). Notes: Some texts use E for voltage; in this lesson we use V. Emphasize typical prefixes: mA = 0.001 A, kΩ = 1000 Ω.
+✓ Checkpoints: Students can write V = I × R and correctly label V, I, R and their SI units on mini whiteboards or paper., Thumbs check: Up if confident naming units; sideways if unsure; down if unfamiliar.
+
+3. EXAMPLE (understand)
+Worked examples (step-by-step, with units): Example 1 (solve for V): Given R = 4.7 Ω and I = 2.0 A, V = I × R = 2.0 A × 4.7 Ω = 9.4 V. Example 2 (solve for I): Given V = 12.0 V and R = 3.0 Ω, I = V ÷ R = 12.0 V ÷ 3.0 Ω = 4.0 A. Brief unit reasoning: A×Ω → V; V÷Ω → A. Highlight rearrangement triangle only after writing the algebra.
+✓ Checkpoints: Cold-call: What equation do we start with? Which operation isolates I? Which units should the answer have?, Common error check: Students avoid mixing mA with A or kΩ with Ω without converting.
+
+4. PRACTICE (apply)
+Retrieval + one-step calculations: 1) Write Ohm's law from memory and label variables. 2) Match each quantity to its SI unit: voltage ( ), current ( ), resistance ( ). 3) Compute R if V = 9.0 V and I = 0.30 A. 4) A resistor has R = 220 Ω; current is 0.050 A. Find V. Encourage unit conversion if needed (e.g., 50 mA = 0.050 A).
+✓ Checkpoints: Item 1: Formula and labels correct for at least 80% of learners., Item 2 answers: voltage→V, current→A, resistance→Ω., Item 3 target: R = 30 Ω; if not, revisit division and units., Item 4 target: V = 11 V; check that students convert mA to A when applicable.
+
+5. REFLECTION (understand)
+Exit slip (1–2 sentences): Complete the sentence: 'Ohm's law states that ______.' Then give one everyday example where knowing V, I, or R matters (e.g., choosing a phone charger or LED resistor).
+✓ Checkpoints: At least 80% include the correct relation V = I × R or its verbal equivalent., Examples are plausible and connect to voltage/current/resistance (not power-only statements).
+
+Estimated time: 30 minutes
+
+Ready to begin? Let's start with the first step!
+07:53
+
+ready
+07:54
+
+You responded to the prompt but skipped the actual task. In this step you should recall from memory: 1) a one-line definition of current + its SI unit, 2) a one-line definition of voltage + its SI unit, 3) the symbol for resistance, and 4) your prior experience with a simple circuit. A helpful process is to copy each question stem and complete it with a short, specific answer. If unsure, write your best guess and mark it with a question mark—this still gives us useful diagnostic information.
+07:54
+

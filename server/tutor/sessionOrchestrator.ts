@@ -57,53 +57,28 @@ export class SessionOrchestrator {
       }
 
       case 'conceptual': {
-        // Student wants to understand a concept - provide lesson plan
+        // Student wants to understand a concept
+        // For now, provide direct explanation using probing instead of full lesson plan dump
         
-        // Check if lesson plan already exists for this session
-        let existingPlan = await storage.getLessonPlan(sessionId);
-        
-        if (existingPlan) {
-          // Return existing lesson plan
-          const lessonPlanData = {
-            targetBloomLevel: existingPlan.targetBloomLevel,
-            steps: existingPlan.steps as any,
-            learningGoals: existingPlan.learningGoals || [],
-            priorKnowledgeCheck: existingPlan.priorKnowledgeCheck,
-            resources: existingPlan.resources as any,
-            estimatedDuration: existingPlan.estimatedDuration
-          };
-          
-          return {
-            response: this.formatLessonPlan(lessonPlanData),
-            messageType: 'lesson_plan',
-            lessonPlan: lessonPlanData
-          };
-        }
-        
-        // Create new lesson plan
-        const lessonPlan = await lessonPlanner.createLessonPlan(
+        const lastTutorMessage = messages
+          .filter(m => m.role === 'tutor')
+          .pop();
+
+        const probeResponse = await probeEngine.generateProbe(
           topic,
-          subject,
-          gradeLevel,
-          undefined, // No prior knowledge signal yet
-          currentBloomLevel
+          currentBloomLevel,
+          userMessage,
+          lastTutorMessage?.content
         );
 
-        // Store lesson plan in database
-        await storage.createLessonPlan({
-          sessionId,
-          targetBloomLevel: lessonPlan.targetBloomLevel,
-          steps: lessonPlan.steps as any, // JSON type
-          learningGoals: lessonPlan.learningGoals,
-          priorKnowledgeCheck: lessonPlan.priorKnowledgeCheck,
-          resources: lessonPlan.resources as any, // JSON type
-          estimatedDuration: lessonPlan.estimatedDuration
-        });
+        // Use the Socratic probe to engage step-by-step
+        const probeQuestion = probeResponse.probe.question || 
+          `Let me help you understand this concept. ${userMessage}. What do you already know about this?`;
 
         return {
-          response: this.formatLessonPlan(lessonPlan),
-          messageType: 'lesson_plan',
-          lessonPlan
+          response: probeQuestion,
+          messageType: 'socratic_probe',
+          probe: probeResponse
         };
       }
 
