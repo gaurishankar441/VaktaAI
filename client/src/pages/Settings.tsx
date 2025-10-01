@@ -125,14 +125,22 @@ export default function Settings() {
       const response = await apiRequest('DELETE', '/api/account');
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       toast({
         title: "Account Deleted",
         description: "Your account has been permanently deleted.",
       });
-      // Redirect to logout
-      setTimeout(() => {
-        window.location.href = '/api/logout';
+      // Logout and redirect
+      setTimeout(async () => {
+        try {
+          await fetch('/api/auth/logout', {
+            method: 'POST',
+            credentials: 'include',
+          });
+        } catch (error) {
+          console.error('Logout failed:', error);
+        }
+        window.location.href = '/login';
       }, 2000);
     },
     onError: () => {
