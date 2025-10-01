@@ -95,23 +95,28 @@ export default function Login() {
       });
 
       const data = await res.json();
+      console.log('OTP Verify Response:', { status: res.status, ok: res.ok, data });
 
-      if (!data.success) {
+      if (!res.ok || !data.success) {
         toast({
           title: 'Invalid OTP',
-          description: 'The code you entered is incorrect',
+          description: data.error || 'The code you entered is incorrect',
           variant: 'destructive',
         });
         return;
       }
 
+      console.log('OTP verification successful, redirecting to dashboard...');
+      
       toast({
         title: 'Success!',
         description: 'You are now logged in',
       });
 
-      setLocation('/');
+      // Use window.location for full page reload to ensure clean state
+      window.location.href = '/';
     } catch (error: any) {
+      console.error('OTP Verification Error:', error);
       toast({
         title: 'Error',
         description: error.message || 'Verification failed',
