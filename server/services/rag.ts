@@ -133,7 +133,8 @@ export class RAGService {
     const prompt = this.buildRAGPrompt(query, contextText);
 
     // 🎯 SMART TOKEN ALLOCATION with proper model limit calculation
-    const MODEL_MAX_TOKENS = 128000; // GPT-5 has 128k context window
+    const MODEL_MAX_TOKENS = 16000; // GPT-3.5-turbo has 16k total context window
+    const MAX_COMPLETION_TOKENS = 4096; // GPT-3.5-turbo max completion tokens limit
     const SAFETY_MARGIN = 500; // Buffer for token estimation errors
     const MIN_COMPLETION_TOKENS = 1000; // Minimum tokens needed for useful response
     
@@ -187,9 +188,9 @@ export class RAGService {
     
     console.log(`[RAG] Added ${estimationBuffer} token estimation buffer (15% safety margin)`);
     
-    // CRITICAL: Strict clamp to prevent exceeding available budget
-    // Use Math.min first to ensure we never exceed available, then clamp to minimum 1
-    const dynamicMaxTokens = Math.max(1, Math.min(desiredResponseTokens, maxAvailableResponseTokens));
+    // CRITICAL: Strict clamp to prevent exceeding available budget AND model's max completion tokens
+    // Use Math.min to respect both available tokens and model's hard limit
+    const dynamicMaxTokens = Math.max(1, Math.min(desiredResponseTokens, maxAvailableResponseTokens, MAX_COMPLETION_TOKENS));
     
     // GUARD: Warn if insufficient tokens but proceed with what's available
     if (dynamicMaxTokens < MIN_COMPLETION_TOKENS) {
