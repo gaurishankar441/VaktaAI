@@ -47,6 +47,13 @@ temp/
 # Sessions
 sessions/
 
-# Replit specific (if needed to ignore)
+# Replit specific
+.cache/
+.local/
+.config/
+attached_assets/
+VaktaAI-backup.zip
+
+# Replit configuration (keep these)
 # .replit
 # replit.nix
