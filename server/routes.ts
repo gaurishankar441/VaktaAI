@@ -20,6 +20,7 @@ import {
   insertNoteSchema,
   insertChatThreadSchema,
   insertTutorSessionSchema,
+  type InsertUser,
 } from "@shared/schema";
 
 // Validation schema for claim verification
@@ -242,6 +243,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error saving settings:", error);
       res.status(500).json({ message: "Failed to save settings" });
+    }
+  });
+
+  // Profile update validation schema
+  const updateProfileSchema = z.object({
+    firstName: z.string().min(1).max(100).optional(),
+    lastName: z.string().min(1).max(100).optional(),
+    email: z.string().email().max(255).optional(),
+  });
+
+  // Profile routes
+  app.put('/api/profile', requireAuth, async (req: any, res) => {
+    try {
+      const userId = req.session.userId;
+      const validated = updateProfileSchema.parse(req.body);
+      
+      const updates: Partial<InsertUser> = {};
+      if (validated.firstName !== undefined) updates.firstName = validated.firstName;
+      if (validated.lastName !== undefined) updates.lastName = validated.lastName;
+      if (validated.email !== undefined) updates.email = validated.email;
+      
+      const user = await storage.updateUser(userId, updates);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      res.json(user);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid input", errors: error.errors });
+      }
+      console.error("Error updating profile:", error);
+      res.status(500).json({ message: "Failed to update profile" });
     }
   });
 

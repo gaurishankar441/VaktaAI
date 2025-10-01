@@ -8,6 +8,7 @@ import {
   Layers, 
   Folder,
   Settings,
+  User,
   LogOut,
   FileText
 } from "lucide-react";
@@ -161,6 +162,13 @@ export function AppSidebar() {
                 align="end"
                 sideOffset={4}
               >
+                <DropdownMenuItem 
+                  onClick={() => handleNavigation('/profile')}
+                  data-testid="menu-profile"
+                >
+                  <User className="w-4 h-4 mr-2" />
+                  Profile
+                </DropdownMenuItem>
                 <DropdownMenuItem 
                   onClick={() => handleNavigation('/settings')}
                   data-testid="menu-settings"

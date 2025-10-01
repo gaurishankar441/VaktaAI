@@ -17,6 +17,7 @@ import Quizzes from "@/pages/Quizzes";
 import Flashcards from "@/pages/Flashcards";
 import Resources from "@/pages/Resources";
 import Settings from "@/pages/Settings";
+import Profile from "@/pages/Profile";
 import Documents from "@/pages/Documents";
 import Login from "@/pages/Login";
 import NotFound from "@/pages/not-found";
@@ -84,6 +85,7 @@ function Router() {
       <Route path="/flashcards" component={() => <ProtectedRoute component={Flashcards} />} />
       <Route path="/resources" component={() => <ProtectedRoute component={Resources} />} />
       <Route path="/settings" component={() => <ProtectedRoute component={Settings} />} />
+      <Route path="/profile" component={() => <ProtectedRoute component={Profile} />} />
       <Route component={NotFound} />
     </Switch>
   );
