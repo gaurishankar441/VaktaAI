@@ -73,7 +73,6 @@ Respond ONLY with JSON:
         {
           responseFormat: { type: "json_object" },
           maxTokens: 3000, // Increased for complete Socratic questions with hints
-          temperature: 0.7,
         }
       );
 
@@ -172,7 +171,6 @@ Respond ONLY with JSON:
         {
           responseFormat: { type: "json_object" },
           maxTokens: 1500, // Increased for complete evaluation reasoning
-          temperature: 0.3,
         }
       );
 

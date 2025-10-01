@@ -260,7 +260,6 @@ Keep it concise and friendly. Student wants to understand, not be overwhelmed.`;
         ],
         {
           maxTokens: 1500,
-          temperature: 0.7,
         }
       );
 

@@ -94,7 +94,6 @@ Respond ONLY with JSON:
         {
           responseFormat: { type: "json_object" },
           maxTokens: 2500, // Increased for complete 3-level feedback
-          temperature: 0.7,
         }
       );
 
@@ -176,7 +175,6 @@ Respond ONLY with JSON:
         {
           responseFormat: { type: "json_object" },
           maxTokens: 2000, // Increased for complete worked examples with steps
-          temperature: 0.7,
         }
       );
 

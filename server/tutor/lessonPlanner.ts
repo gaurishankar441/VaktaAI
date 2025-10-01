@@ -91,7 +91,6 @@ Respond ONLY with JSON:
         {
           responseFormat: { type: "json_object" },
           maxTokens: 4000, // Increased for complete lesson plans with all steps
-          temperature: 0.7,
         }
       );
 
@@ -154,7 +153,6 @@ Respond ONLY with JSON:
         {
           responseFormat: { type: "json_object" },
           maxTokens: 1500, // Increased for complete assessment with gaps
-          temperature: 0.3,
         }
       );
 

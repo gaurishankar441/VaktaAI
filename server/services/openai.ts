@@ -92,12 +92,12 @@ export class OpenAIService {
     } = {}
   ): Promise<ChatResponse> {
     try {
-      console.log("[OpenAI] Calling chat completion with model:", options.model || "gpt-5");
+      console.log("[OpenAI] Calling chat completion with model:", options.model || "gpt-3.5-turbo");
       console.log("[OpenAI] Response format:", options.responseFormat?.type || "text");
       console.log("[OpenAI] Max tokens:", options.maxTokens || "default");
       
       const response = await openai.chat.completions.create({
-        model: options.model || "gpt-5",
+        model: options.model || "gpt-3.5-turbo",
         messages: messages as any,
         response_format: options.responseFormat,
         max_completion_tokens: options.maxTokens,
