@@ -209,7 +209,7 @@ export class SessionOrchestrator {
       questionText: lastTutorMessage.content,
       studentAnswer,
       isCorrect,
-      confidence: '70',
+      confidence: '0.70', // 0-1 confidence score (70%)
       feedbackGiven: feedback.processFeedback || feedback.taskFeedback || 'Feedback provided',
       timeSpent: 0 // Will be tracked by frontend
     });
