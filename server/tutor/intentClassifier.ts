@@ -25,27 +25,30 @@ Recent conversation: ${sessionContext.recentMessages?.slice(-3).join(' | ') || '
 
     const prompt = `Classify the student's query into ONE of these intent types:
 
-1. ANSWER_ATTEMPT - Student is providing an answer, solution, or response to a previous question
-   Examples: "It's 42", "The answer is photosynthesis", "I think it's...", "V = IR", "x = 5"
-   IMPORTANT: If recent conversation shows tutor asked a question, student is likely answering it
+PRIORITY RULE: If query contains explain/samjhao/batao/what/how/why/elaborate → CONCEPTUAL (NOT answer_attempt!)
 
-2. CONCEPTUAL - Student wants to understand an idea, theory, or concept
-   Examples: "What is photosynthesis?", "Explain Newton's laws", "How does this work?"
+1. CONCEPTUAL - Student wants explanation or understanding (TOP PRIORITY!)
+   Keywords: "explain", "samjhao", "batao", "what is", "how does", "why", "elaborate", "kya hai"
+   Examples: "P=VI samjhao", "Explain this", "batao kya relation hai", "What is X?"
 
-3. APPLICATION - Student wants to solve a problem or apply knowledge
-   Examples: "Can you help me solve this equation?", "How do I calculate this?", "What steps should I follow?"
+2. ANSWER_ATTEMPT - Student giving SHORT answer to tutor's direct question
+   Examples: "Yes", "No", "It's 5", "ready", "ok" (only single word/short phrase responses)
+   NOT answer_attempt: Any question or request for explanation
 
-4. CONFUSION - Student is confused, stuck, or didn't understand previous explanation
-   Examples: "I don't get it", "This is confusing", "Can you explain again?", "I'm stuck"
+3. APPLICATION - Student wants to solve/apply
+   Examples: "Help me solve this", "How do I calculate?"
 
-5. ADMINISTRATIVE - Student asks about syllabus, exam, deadlines, course info
-   Examples: "When is the test?", "What topics are covered?", "Is this in the exam?"
+4. CONFUSION - Student confused/stuck
+   Examples: "I don't get it", "This is confusing"
+
+5. ADMINISTRATIVE - Course/exam questions
+   Examples: "When is the test?"
 
 ${contextInfo}
 
 Student Query: "${userQuery}"
 
-CRITICAL: Check if recent conversation shows tutor asking a question. If yes, student is likely providing ANSWER_ATTEMPT.
+REMEMBER: Any request for explanation = CONCEPTUAL (ignore context, focus on keywords!)
 
 Respond ONLY with JSON:
 {
