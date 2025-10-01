@@ -58,6 +58,29 @@ export class SessionOrchestrator {
 
       case 'conceptual': {
         // Student wants to understand a concept - provide lesson plan
+        
+        // Check if lesson plan already exists for this session
+        let existingPlan = await storage.getLessonPlan(sessionId);
+        
+        if (existingPlan) {
+          // Return existing lesson plan
+          const lessonPlanData = {
+            targetBloomLevel: existingPlan.targetBloomLevel,
+            steps: existingPlan.steps as any,
+            learningGoals: existingPlan.learningGoals || [],
+            priorKnowledgeCheck: existingPlan.priorKnowledgeCheck,
+            resources: existingPlan.resources as any,
+            estimatedDuration: existingPlan.estimatedDuration
+          };
+          
+          return {
+            response: this.formatLessonPlan(lessonPlanData),
+            messageType: 'lesson_plan',
+            lessonPlan: lessonPlanData
+          };
+        }
+        
+        // Create new lesson plan
         const lessonPlan = await lessonPlanner.createLessonPlan(
           topic,
           subject,
