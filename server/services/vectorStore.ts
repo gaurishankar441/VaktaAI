@@ -1,5 +1,4 @@
 import { pineconeService } from './pinecone.js';
-import { qdrantService } from './qdrant.js';
 
 export interface VectorMatch {
   id: string;
@@ -53,18 +52,13 @@ class VectorStoreManager {
   }
 
   private initializeStore() {
-    // Try Pinecone first (if API key is available)
+    // Use Pinecone as the vector store
     if (pineconeService.isAvailable()) {
       this.store = pineconeService as IVectorStore;
       console.log("Using Pinecone as vector store");
     } 
-    // Fallback to Qdrant
-    else if (qdrantService.isAvailable()) {
-      this.store = qdrantService as IVectorStore;
-      console.log("Using Qdrant as vector store");
-    } 
     else {
-      console.warn("No vector store available. Configure PINECONE_API_KEY or QDRANT_URL");
+      console.warn("Pinecone not available. Configure PINECONE_API_KEY");
       this.store = null;
     }
   }
@@ -135,7 +129,6 @@ class VectorStoreManager {
   getStoreName(): string {
     if (!this.store) return "none";
     if (this.store === pineconeService) return "pinecone";
-    if (this.store === qdrantService) return "qdrant";
     return "unknown";
   }
 }
