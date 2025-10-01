@@ -24,7 +24,7 @@ class TwilioService {
   async sendOTP(phoneE164: string): Promise<SendOTPResult> {
     try {
       const verification = await client.verify.v2
-        .services(verifySid)
+        .services(verifySid!)
         .verifications.create({
           to: phoneE164,
           channel: 'sms',
@@ -44,7 +44,7 @@ class TwilioService {
   async verifyOTP(phoneE164: string, code: string): Promise<VerifyOTPResult> {
     try {
       const verificationCheck = await client.verify.v2
-        .services(verifySid)
+        .services(verifySid!)
         .verificationChecks.create({
           to: phoneE164,
           code: code,
