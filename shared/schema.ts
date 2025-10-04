@@ -1,666 +1,143 @@
-import { sql } from 'drizzle-orm';
-import {
-  index,
-  uniqueIndex,
-  jsonb,
-  pgTable,
-  timestamp,
-  varchar,
-  text,
-  integer,
-  boolean,
-  decimal,
-  pgEnum,
-} from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { pgTable, text, varchar, integer, jsonb, timestamp, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
-import { relations } from "drizzle-orm";
 
-// Session storage table (required for Replit Auth)
-export const sessions = pgTable(
-  "sessions",
-  {
-    sid: varchar("sid").primaryKey(),
-    sess: jsonb("sess").notNull(),
-    expire: timestamp("expire").notNull(),
-  },
-  (table) => [index("IDX_session_expire").on(table.expire)],
-);
-
-// User storage table (SMS OTP authentication)
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  phoneE164: varchar("phone_e164").unique().notNull(),
-  firstName: varchar("first_name"),
-  lastName: varchar("last_name"),
-  email: varchar("email"),
-  planTier: varchar("plan_tier").default('free'),
+  username: text("username").notNull().unique(),
+  password: text("password").notNull(),
+  name: text("name").notNull(),
+  class: text("class"),
+  board: text("board"),
+  streak: integer("streak").default(0),
   createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-  deletedAt: timestamp("deleted_at"),
 });
 
-// User settings
-export const settings = pgTable("settings", {
-  userId: varchar("user_id").primaryKey().references(() => users.id, { onDelete: 'cascade' }),
-  model: varchar("model").default('gpt-5').notNull(),
-  temperature: decimal("temperature", { precision: 3, scale: 2 }).default('0.7'),
-  theme: varchar("theme").default('light').notNull(),
-  privacyDeleteOnSession: boolean("privacy_delete_on_session").default(false),
-  analyticsEnabled: boolean("analytics_enabled").default(true),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
-
-// Folders for organizing files
-export const folders = pgTable("folders", {
+export const chatSessions = pgTable("chat_sessions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
-  name: varchar("name").notNull(),
-  parentId: varchar("parent_id").references(() => folders.id, { onDelete: 'cascade' }),
+  userId: varchar("user_id").references(() => users.id),
+  mode: text("mode").notNull(), // 'tutor' | 'docchat'
+  subject: text("subject"),
+  level: text("level"),
+  topic: text("topic"),
+  language: text("language").default("en"),
+  status: text("status").default("active"), // 'active' | 'completed'
+  metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-// Source types enum
-export const sourceTypeEnum = pgEnum('source_type', [
-  'pdf', 'pptx', 'docx', 'mp3', 'mp4', 'youtube', 'url'
-]);
-
-// Document status enum
-export const documentStatusEnum = pgEnum('document_status', [
-  'uploading', 'processing', 'indexed', 'failed'
-]);
-
-// Files uploaded by users
-export const files = pgTable("files", {
+export const messages = pgTable("messages", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
-  folderId: varchar("folder_id").references(() => folders.id, { onDelete: 'set null' }),
-  filename: varchar("filename").notNull(),
-  originalName: varchar("original_name").notNull(),
-  url: text("url").notNull(),
-  fileType: varchar("file_type").notNull(),
-  size: integer("size"),
-  mimeType: varchar("mime_type"),
+  chatSessionId: varchar("chat_session_id").references(() => chatSessions.id),
+  role: text("role").notNull(), // 'user' | 'assistant' | 'system'
+  content: text("content").notNull(),
+  metadata: jsonb("metadata"), // citations, tools used, etc.
   createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-// Documents for RAG processing
 export const documents = pgTable("documents", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
-  fileId: varchar("file_id").references(() => files.id, { onDelete: 'cascade' }),
-  sourceType: sourceTypeEnum("source_type").notNull(),
+  userId: varchar("user_id").references(() => users.id),
+  title: text("title").notNull(),
+  type: text("type").notNull(), // 'pdf' | 'youtube' | 'url'
   sourceUrl: text("source_url"),
-  title: varchar("title").notNull(),
-  status: documentStatusEnum("status").default('uploading').notNull(),
-  metadata: jsonb("metadata"),
-  totalPages: integer("total_pages"),
-  totalChunks: integer("total_chunks"),
-  processingError: text("processing_error"),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
-
-// Text chunks for RAG
-export const chunks = pgTable("chunks", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  documentId: varchar("document_id").notNull().references(() => documents.id, { onDelete: 'cascade' }),
-  text: text("text").notNull(),
-  startPage: integer("start_page"),
-  endPage: integer("end_page"),
-  startTime: decimal("start_time", { precision: 10, scale: 3 }),
-  endTime: decimal("end_time", { precision: 10, scale: 3 }),
-  vectorId: varchar("vector_id"),
-  embeddingRef: text("embedding_ref"),
+  status: text("status").default("processing"), // 'processing' | 'ready' | 'error'
+  pages: integer("pages"),
+  tokens: integer("tokens"),
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// Chat threads for document chat
-export const chatThreads = pgTable("chat_threads", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
-  title: varchar("title"),
-  documentIds: text("document_ids").array(),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
-
-// Chat messages
-export const chatMessages = pgTable("chat_messages", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  threadId: varchar("thread_id").notNull().references(() => chatThreads.id, { onDelete: 'cascade' }),
-  role: varchar("role").notNull(), // 'user' | 'assistant'
-  content: text("content").notNull(),
-  citations: jsonb("citations"),
-  metadata: jsonb("metadata"),
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
-// Difficulty levels enum
-export const difficultyEnum = pgEnum('difficulty', ['easy', 'medium', 'hard']);
-
-// Bloom's taxonomy levels enum
-export const bloomLevelEnum = pgEnum('bloom_level', [
-  'remember', 'understand', 'apply', 'analyze', 'evaluate', 'create'
-]);
-
-// Intent type enum
-export const intentTypeEnum = pgEnum('intent_type', [
-  'conceptual', 'application', 'administrative', 'confusion'
-]);
-
-// Personality mode enum
-export const personalityModeEnum = pgEnum('personality_mode', [
-  'friendly_mentor', 'exam_coach', 'encouraging_guide', 'neutral'
-]);
-
-// Step type enum
-export const stepTypeEnum = pgEnum('step_type', [
-  'explain', 'example', 'practice', 'reflection', 'probe'
-]);
-
-// Student profiles for mastery tracking
-export const studentProfiles = pgTable("student_profiles", {
-  userId: varchar("user_id").primaryKey().references(() => users.id, { onDelete: 'cascade' }),
-  preferredMode: personalityModeEnum("preferred_mode").default('friendly_mentor'),
-  learningStyle: varchar("learning_style"), // visual, auditory, kinesthetic, reading
-  errorHistory: jsonb("error_history"), // array of common mistakes
-  preferences: jsonb("preferences"), // study preferences
-  totalSessions: integer("total_sessions").default(0),
-  totalTimeSpent: integer("total_time_spent").default(0), // in seconds
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
-
-// Mastery tracking per topic
-export const masteryScores = pgTable("mastery_scores", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
-  subject: varchar("subject").notNull(),
-  topic: varchar("topic").notNull(),
-  bloomLevel: bloomLevelEnum("bloom_level").notNull(),
-  score: decimal("score", { precision: 5, scale: 2 }).notNull(), // 0-100
-  attempts: integer("attempts").default(0),
-  correctCount: integer("correct_count").default(0),
-  incorrectCount: integer("incorrect_count").default(0),
-  lastPracticed: timestamp("last_practiced").defaultNow(),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-}, (table) => [
-  // Unique constraint: one mastery score per user/subject/topic/bloom level
-  uniqueIndex("idx_mastery_unique").on(table.userId, table.subject, table.topic, table.bloomLevel),
-  // Performance index for topic-level queries
-  index("idx_mastery_topic").on(table.userId, table.subject, table.topic),
-]);
-
-// Lesson plans
-export const lessonPlans = pgTable("lesson_plans", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  sessionId: varchar("session_id").notNull().references(() => tutorSessions.id, { onDelete: 'cascade' }),
-  learningGoals: text("learning_goals").array(),
-  targetBloomLevel: bloomLevelEnum("target_bloom_level").notNull(),
-  priorKnowledgeCheck: text("prior_knowledge_check"),
-  steps: jsonb("steps").notNull(), // array of {type, content, checkpoints}
-  resources: jsonb("resources"), // array of document references
-  estimatedDuration: integer("estimated_duration"), // in minutes
-  createdAt: timestamp("created_at").defaultNow(),
-}, (table) => [
-  // Unique constraint: one lesson plan per session
-  uniqueIndex("idx_lesson_plan_session").on(table.sessionId),
-]);
-
-// Tutor sessions (updated)
-export const tutorSessions = pgTable("tutor_sessions", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
-  subject: varchar("subject").notNull(),
-  gradeLevel: varchar("grade_level").notNull(),
-  topic: varchar("topic").notNull(),
-  title: varchar("title"),
-  personalityMode: personalityModeEnum("personality_mode").default('friendly_mentor'),
-  currentStepIndex: integer("current_step_index").default(0),
-  masteryState: jsonb("mastery_state"), // current mastery levels
-  sessionMetadata: jsonb("session_metadata"), // additional context
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
-
-// Tutor messages
-export const tutorMessages = pgTable("tutor_messages", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  sessionId: varchar("session_id").notNull().references(() => tutorSessions.id, { onDelete: 'cascade' }),
-  role: varchar("role").notNull(), // 'user' | 'tutor'
-  content: text("content").notNull(),
-  messageType: varchar("message_type"), // 'explanation' | 'worked_example' | 'practice' | 'feedback' | 'probe' | 'hint'
-  intentType: intentTypeEnum("intent_type"), // classified intent for user messages
-  bloomLevel: bloomLevelEnum("bloom_level"), // target bloom level for this message
-  citations: jsonb("citations"), // source citations
-  metadata: jsonb("metadata"),
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
-// Tutor attempts (student performance tracking)
-export const tutorAttempts = pgTable("tutor_attempts", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  sessionId: varchar("session_id").notNull().references(() => tutorSessions.id, { onDelete: 'cascade' }),
-  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
-  questionText: text("question_text").notNull(),
-  studentAnswer: text("student_answer").notNull(),
-  isCorrect: boolean("is_correct"),
-  confidence: decimal("confidence", { precision: 3, scale: 2 }), // 0-1 student confidence
-  bloomLevel: bloomLevelEnum("bloom_level").notNull(),
-  feedbackGiven: text("feedback_given"),
-  hintsUsed: integer("hints_used").default(0),
-  timeSpent: integer("time_spent"), // in seconds
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
-// Quizzes
 export const quizzes = pgTable("quizzes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
-  documentId: varchar("document_id").references(() => documents.id, { onDelete: 'cascade' }),
-  title: varchar("title").notNull(),
-  description: text("description"),
-  totalQuestions: integer("total_questions").default(0),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
-
-// Quiz questions
-export const quizQuestions = pgTable("quiz_questions", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  quizId: varchar("quiz_id").notNull().references(() => quizzes.id, { onDelete: 'cascade' }),
-  question: text("question").notNull(),
-  options: jsonb("options").notNull(), // array of strings
-  correctAnswer: varchar("correct_answer").notNull(),
-  rationale: text("rationale").notNull(),
-  difficulty: difficultyEnum("difficulty").notNull(),
-  bloomLevel: bloomLevelEnum("bloom_level").notNull(),
-  citations: jsonb("citations"),
-  orderIndex: integer("order_index").notNull(),
+  userId: varchar("user_id").references(() => users.id),
+  title: text("title").notNull(),
+  subject: text("subject"),
+  topic: text("topic"),
+  difficulty: text("difficulty"), // 'easy' | 'medium' | 'hard'
+  type: text("type").default("auto"), // 'auto' | 'manual'
+  questions: jsonb("questions").notNull(),
+  metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// Quiz attempts
 export const quizAttempts = pgTable("quiz_attempts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
-  quizId: varchar("quiz_id").notNull().references(() => quizzes.id, { onDelete: 'cascade' }),
-  score: integer("score").notNull(),
-  totalQuestions: integer("total_questions").notNull(),
+  quizId: varchar("quiz_id").references(() => quizzes.id),
+  userId: varchar("user_id").references(() => users.id),
   answers: jsonb("answers").notNull(),
-  timeSpent: integer("time_spent"), // in seconds
-  completedAt: timestamp("completed_at").defaultNow(),
+  score: integer("score"),
+  totalQuestions: integer("total_questions"),
+  correctAnswers: integer("correct_answers"),
+  timeSpent: integer("time_spent"), // seconds
+  completed: boolean("completed").default(false),
   createdAt: timestamp("created_at").defaultNow(),
+  completedAt: timestamp("completed_at"),
 });
 
-// Flashcard decks
-export const flashcardDecks = pgTable("flashcard_decks", {
+export const studyPlans = pgTable("study_plans", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
-  documentId: varchar("document_id").references(() => documents.id, { onDelete: 'cascade' }),
-  title: varchar("title").notNull(),
-  description: text("description"),
-  totalCards: integer("total_cards").default(0),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
-
-// Flashcards
-export const flashcards = pgTable("flashcards", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  deckId: varchar("deck_id").notNull().references(() => flashcardDecks.id, { onDelete: 'cascade' }),
-  front: text("front").notNull(),
-  back: text("back").notNull(),
-  clozeText: text("cloze_text"),
-  citations: jsonb("citations"),
-  // SRS fields
-  intervalDays: integer("interval_days").default(1),
-  ease: decimal("ease", { precision: 4, scale: 2 }).default('2.50'),
-  dueAt: timestamp("due_at").defaultNow(),
-  reviews: integer("reviews").default(0),
-  lapses: integer("lapses").default(0),
-  orderIndex: integer("order_index").notNull(),
+  userId: varchar("user_id").references(() => users.id),
+  title: text("title").notNull(),
+  exam: text("exam"), // 'jee' | 'neet' | 'cbse' | etc.
+  subjects: jsonb("subjects").notNull(),
+  schedule: jsonb("schedule").notNull(),
+  preferences: jsonb("preferences"),
+  status: text("status").default("active"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-// Flashcard reviews (for SRS tracking)
-export const flashcardReviews = pgTable("flashcard_reviews", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
-  flashcardId: varchar("flashcard_id").notNull().references(() => flashcards.id, { onDelete: 'cascade' }),
-  rating: varchar("rating").notNull(), // 'again', 'hard', 'good', 'easy'
-  previousInterval: integer("previous_interval"),
-  newInterval: integer("new_interval"),
-  previousEase: decimal("previous_ease", { precision: 4, scale: 2 }),
-  newEase: decimal("new_ease", { precision: 4, scale: 2 }),
-  reviewedAt: timestamp("reviewed_at").defaultNow(),
-});
-
-// Note templates enum
-export const noteTemplateEnum = pgEnum('note_template', [
-  'blank', 'lecture', 'research', 'review', 'summary'
-]);
-
-// Notes
 export const notes = pgTable("notes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
-  title: varchar("title").notNull(),
-  content: text("content"),
-  templateType: noteTemplateEnum("template_type").notNull(),
-  metadata: jsonb("metadata"),
-  wordCount: integer("word_count").default(0),
+  userId: varchar("user_id").references(() => users.id),
+  title: text("title").notNull(),
+  content: jsonb("content").notNull(), // Cornell format structure
+  sources: jsonb("sources"), // URLs, documents, etc.
+  flashcards: jsonb("flashcards"),
+  tags: jsonb("tags"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-// Relations
-export const usersRelations = relations(users, ({ one, many }) => ({
-  settings: one(settings),
-  studentProfile: one(studentProfiles),
-  folders: many(folders),
-  files: many(files),
-  documents: many(documents),
-  chatThreads: many(chatThreads),
-  tutorSessions: many(tutorSessions),
-  masteryScores: many(masteryScores),
-  tutorAttempts: many(tutorAttempts),
-  quizzes: many(quizzes),
-  quizAttempts: many(quizAttempts),
-  flashcardDecks: many(flashcardDecks),
-  flashcardReviews: many(flashcardReviews),
-  notes: many(notes),
-}));
+export const flashcards = pgTable("flashcards", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id),
+  noteId: varchar("note_id").references(() => notes.id),
+  front: text("front").notNull(),
+  back: text("back").notNull(),
+  difficulty: integer("difficulty").default(0), // SRS difficulty
+  interval: integer("interval").default(1), // SRS interval in days
+  lastReviewed: timestamp("last_reviewed"),
+  nextReview: timestamp("next_review"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
 
-export const settingsRelations = relations(settings, ({ one }) => ({
-  user: one(users, {
-    fields: [settings.userId],
-    references: [users.id],
-  }),
-}));
-
-export const foldersRelations = relations(folders, ({ one, many }) => ({
-  user: one(users, {
-    fields: [folders.userId],
-    references: [users.id],
-  }),
-  parent: one(folders, {
-    fields: [folders.parentId],
-    references: [folders.id],
-  }),
-  children: many(folders),
-  files: many(files),
-}));
-
-export const filesRelations = relations(files, ({ one, many }) => ({
-  user: one(users, {
-    fields: [files.userId],
-    references: [users.id],
-  }),
-  folder: one(folders, {
-    fields: [files.folderId],
-    references: [folders.id],
-  }),
-  documents: many(documents),
-}));
-
-export const documentsRelations = relations(documents, ({ one, many }) => ({
-  user: one(users, {
-    fields: [documents.userId],
-    references: [users.id],
-  }),
-  file: one(files, {
-    fields: [documents.fileId],
-    references: [files.id],
-  }),
-  chunks: many(chunks),
-  quizzes: many(quizzes),
-  flashcardDecks: many(flashcardDecks),
-}));
-
-export const chunksRelations = relations(chunks, ({ one }) => ({
-  document: one(documents, {
-    fields: [chunks.documentId],
-    references: [documents.id],
-  }),
-}));
-
-export const chatThreadsRelations = relations(chatThreads, ({ one, many }) => ({
-  user: one(users, {
-    fields: [chatThreads.userId],
-    references: [users.id],
-  }),
-  messages: many(chatMessages),
-}));
-
-export const chatMessagesRelations = relations(chatMessages, ({ one }) => ({
-  thread: one(chatThreads, {
-    fields: [chatMessages.threadId],
-    references: [chatThreads.id],
-  }),
-}));
-
-export const studentProfilesRelations = relations(studentProfiles, ({ one }) => ({
-  user: one(users, {
-    fields: [studentProfiles.userId],
-    references: [users.id],
-  }),
-}));
-
-export const masteryScoresRelations = relations(masteryScores, ({ one }) => ({
-  user: one(users, {
-    fields: [masteryScores.userId],
-    references: [users.id],
-  }),
-}));
-
-export const lessonPlansRelations = relations(lessonPlans, ({ one }) => ({
-  session: one(tutorSessions, {
-    fields: [lessonPlans.sessionId],
-    references: [tutorSessions.id],
-  }),
-}));
-
-export const tutorSessionsRelations = relations(tutorSessions, ({ one, many }) => ({
-  user: one(users, {
-    fields: [tutorSessions.userId],
-    references: [users.id],
-  }),
-  messages: many(tutorMessages),
-  lessonPlan: one(lessonPlans),
-  attempts: many(tutorAttempts),
-}));
-
-export const tutorMessagesRelations = relations(tutorMessages, ({ one }) => ({
-  session: one(tutorSessions, {
-    fields: [tutorMessages.sessionId],
-    references: [tutorSessions.id],
-  }),
-}));
-
-export const tutorAttemptsRelations = relations(tutorAttempts, ({ one }) => ({
-  user: one(users, {
-    fields: [tutorAttempts.userId],
-    references: [users.id],
-  }),
-  session: one(tutorSessions, {
-    fields: [tutorAttempts.sessionId],
-    references: [tutorSessions.id],
-  }),
-}));
-
-export const quizzesRelations = relations(quizzes, ({ one, many }) => ({
-  user: one(users, {
-    fields: [quizzes.userId],
-    references: [users.id],
-  }),
-  document: one(documents, {
-    fields: [quizzes.documentId],
-    references: [documents.id],
-  }),
-  questions: many(quizQuestions),
-  attempts: many(quizAttempts),
-}));
-
-export const quizQuestionsRelations = relations(quizQuestions, ({ one }) => ({
-  quiz: one(quizzes, {
-    fields: [quizQuestions.quizId],
-    references: [quizzes.id],
-  }),
-}));
-
-export const quizAttemptsRelations = relations(quizAttempts, ({ one }) => ({
-  user: one(users, {
-    fields: [quizAttempts.userId],
-    references: [users.id],
-  }),
-  quiz: one(quizzes, {
-    fields: [quizAttempts.quizId],
-    references: [quizzes.id],
-  }),
-}));
-
-export const flashcardDecksRelations = relations(flashcardDecks, ({ one, many }) => ({
-  user: one(users, {
-    fields: [flashcardDecks.userId],
-    references: [users.id],
-  }),
-  document: one(documents, {
-    fields: [flashcardDecks.documentId],
-    references: [documents.id],
-  }),
-  flashcards: many(flashcards),
-}));
-
-export const flashcardsRelations = relations(flashcards, ({ one, many }) => ({
-  deck: one(flashcardDecks, {
-    fields: [flashcards.deckId],
-    references: [flashcardDecks.id],
-  }),
-  reviews: many(flashcardReviews),
-}));
-
-export const flashcardReviewsRelations = relations(flashcardReviews, ({ one }) => ({
-  user: one(users, {
-    fields: [flashcardReviews.userId],
-    references: [users.id],
-  }),
-  flashcard: one(flashcards, {
-    fields: [flashcardReviews.flashcardId],
-    references: [flashcards.id],
-  }),
-}));
-
-export const notesRelations = relations(notes, ({ one }) => ({
-  user: one(users, {
-    fields: [notes.userId],
-    references: [users.id],
-  }),
-}));
-
-// Zod schemas for validation
+// Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   createdAt: true,
-  updatedAt: true,
-  deletedAt: true,
 });
 
-export const insertSettingsSchema = createInsertSchema(settings).omit({
-  createdAt: true,
-  updatedAt: true,
-}).extend({
-  temperature: z.union([z.string(), z.number()]).optional().transform(val => 
-    val !== undefined ? String(val) : undefined
-  ),
-});
-
-export const insertFolderSchema = createInsertSchema(folders).omit({
+export const insertChatSessionSchema = createInsertSchema(chatSessions).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
 });
 
-export const insertFileSchema = createInsertSchema(files).omit({
+export const insertMessageSchema = createInsertSchema(messages).omit({
   id: true,
   createdAt: true,
-  updatedAt: true,
 });
 
 export const insertDocumentSchema = createInsertSchema(documents).omit({
   id: true,
   createdAt: true,
-  updatedAt: true,
-});
-
-export const insertChunkSchema = createInsertSchema(chunks).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const insertChatThreadSchema = createInsertSchema(chatThreads).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const insertStudentProfileSchema = createInsertSchema(studentProfiles).omit({
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertMasteryScoreSchema = createInsertSchema(masteryScores).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-}).extend({
-  score: z.union([z.string(), z.number()]).transform(val => String(val)),
-});
-
-export const insertLessonPlanSchema = createInsertSchema(lessonPlans).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const insertTutorSessionSchema = createInsertSchema(tutorSessions).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertTutorMessageSchema = createInsertSchema(tutorMessages).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const insertTutorAttemptSchema = createInsertSchema(tutorAttempts).omit({
-  id: true,
-  createdAt: true,
-}).extend({
-  confidence: z.union([z.string(), z.number()]).optional().transform(val => 
-    val !== undefined ? String(val) : undefined
-  ),
 });
 
 export const insertQuizSchema = createInsertSchema(quizzes).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertQuizQuestionSchema = createInsertSchema(quizQuestions).omit({
   id: true,
   createdAt: true,
 });
@@ -668,22 +145,13 @@ export const insertQuizQuestionSchema = createInsertSchema(quizQuestions).omit({
 export const insertQuizAttemptSchema = createInsertSchema(quizAttempts).omit({
   id: true,
   createdAt: true,
+  completedAt: true,
 });
 
-export const insertFlashcardDeckSchema = createInsertSchema(flashcardDecks).omit({
+export const insertStudyPlanSchema = createInsertSchema(studyPlans).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
-});
-
-export const insertFlashcardSchema = createInsertSchema(flashcards).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertFlashcardReviewSchema = createInsertSchema(flashcardReviews).omit({
-  id: true,
 });
 
 export const insertNoteSchema = createInsertSchema(notes).omit({
@@ -692,46 +160,35 @@ export const insertNoteSchema = createInsertSchema(notes).omit({
   updatedAt: true,
 });
 
-// Type exports
-export type InsertUser = z.infer<typeof insertUserSchema>;
+export const insertFlashcardSchema = createInsertSchema(flashcards).omit({
+  id: true,
+  createdAt: true,
+});
+
+// Types
 export type User = typeof users.$inferSelect;
-export type Settings = typeof settings.$inferSelect;
-export type InsertSettings = z.infer<typeof insertSettingsSchema>;
-export type StudentProfile = typeof studentProfiles.$inferSelect;
-export type InsertStudentProfile = z.infer<typeof insertStudentProfileSchema>;
-export type MasteryScore = typeof masteryScores.$inferSelect;
-export type InsertMasteryScore = z.infer<typeof insertMasteryScoreSchema>;
-export type LessonPlan = typeof lessonPlans.$inferSelect;
-export type InsertLessonPlan = z.infer<typeof insertLessonPlanSchema>;
-export type Folder = typeof folders.$inferSelect;
-export type InsertFolder = z.infer<typeof insertFolderSchema>;
-export type File = typeof files.$inferSelect;
-export type InsertFile = z.infer<typeof insertFileSchema>;
+export type InsertUser = z.infer<typeof insertUserSchema>;
+
+export type ChatSession = typeof chatSessions.$inferSelect;
+export type InsertChatSession = z.infer<typeof insertChatSessionSchema>;
+
+export type Message = typeof messages.$inferSelect;
+export type InsertMessage = z.infer<typeof insertMessageSchema>;
+
 export type Document = typeof documents.$inferSelect;
 export type InsertDocument = z.infer<typeof insertDocumentSchema>;
-export type Chunk = typeof chunks.$inferSelect;
-export type InsertChunk = z.infer<typeof insertChunkSchema>;
-export type ChatThread = typeof chatThreads.$inferSelect;
-export type InsertChatThread = z.infer<typeof insertChatThreadSchema>;
-export type ChatMessage = typeof chatMessages.$inferSelect;
-export type InsertChatMessage = z.infer<typeof insertChatMessageSchema>;
-export type TutorSession = typeof tutorSessions.$inferSelect;
-export type InsertTutorSession = z.infer<typeof insertTutorSessionSchema>;
-export type TutorMessage = typeof tutorMessages.$inferSelect;
-export type InsertTutorMessage = z.infer<typeof insertTutorMessageSchema>;
-export type TutorAttempt = typeof tutorAttempts.$inferSelect;
-export type InsertTutorAttempt = z.infer<typeof insertTutorAttemptSchema>;
+
 export type Quiz = typeof quizzes.$inferSelect;
 export type InsertQuiz = z.infer<typeof insertQuizSchema>;
-export type QuizQuestion = typeof quizQuestions.$inferSelect;
-export type InsertQuizQuestion = z.infer<typeof insertQuizQuestionSchema>;
+
 export type QuizAttempt = typeof quizAttempts.$inferSelect;
 export type InsertQuizAttempt = z.infer<typeof insertQuizAttemptSchema>;
-export type FlashcardDeck = typeof flashcardDecks.$inferSelect;
-export type InsertFlashcardDeck = z.infer<typeof insertFlashcardDeckSchema>;
-export type Flashcard = typeof flashcards.$inferSelect;
-export type InsertFlashcard = z.infer<typeof insertFlashcardSchema>;
-export type FlashcardReview = typeof flashcardReviews.$inferSelect;
-export type InsertFlashcardReview = z.infer<typeof insertFlashcardReviewSchema>;
+
+export type StudyPlan = typeof studyPlans.$inferSelect;
+export type InsertStudyPlan = z.infer<typeof insertStudyPlanSchema>;
+
 export type Note = typeof notes.$inferSelect;
 export type InsertNote = z.infer<typeof insertNoteSchema>;
+
+export type Flashcard = typeof flashcards.$inferSelect;
+export type InsertFlashcard = z.infer<typeof insertFlashcardSchema>;

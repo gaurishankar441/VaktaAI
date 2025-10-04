@@ -1,0 +1,354 @@
+0) Product-wide UX rules (apply everywhere)
+
+Interaction
+
+“3-clicks max” to any core action.
+
+All heavy actions open in-place overlays:
+
+Popover (small, anchored) for quick params.
+
+Modal (blocking) for multi-step flows.
+
+Side Sheet (non-blocking drawer) for utilities (Quick Actions).
+
+Modals follow WAI-ARIA APG: focus trap, ESC to close, aria-modal, labelledby/ describedby; backdrop blur+dim, not page transparency. 
+W3C
+
+UI kit
+
+App shell (left rail), content canvas, optional right “Quick Actions” drawer.
+
+Inter for UI, STIX Two Math for equations.
+
+Colors: Indigo #4F46E5 (primary), Success #16A34A, Warning #EAB308, Danger #DC2626.
+
+8-pt spacing, rounded-xl (12px), motion ≤200ms ease-out.
+
+Accessibility & speed
+
+Keyboard first (Cmd/Ctrl-K palette), live regions for streaming tokens.
+
+SSE everywhere; FastAPI EventSourceResponse on the backend. 
+devdojo.com
+
+Grounding
+
+Hybrid RAG (BM25 + embeddings) over Qdrant with BGE-M3 embeddings + bge-reranker-v2-m3. 
+W3C
++1
+
+India-first curriculum
+
+Subject trees and exam blueprints align to CBSE/ICSE/IB/State Boards + JEE/NEET. (Point your content mappers to official board curricula and NTA NEET IB.) 
+GitHub
++1
+
+1) AI Tutor (text now, voice now, avatar later)
+UX
+
+Tutor Launcher (modal, 4 steps):
+
+Subject (Math/Physics/Chem/Bio/History…)
+
+Level (Class 6–12, JEE Main/Adv, NEET UG, CUET)
+
+Topic (free text with autosuggest from syllabus trees)
+
+Language & Accent (English / Hindi mixed; Hinglish accepted)
+
+Tutor Room
+
+Left: Lesson plan (Intro → Core Concepts → Practice → Recap).
+
+Center: Chat (streaming, LaTeX inline).
+
+Right (drawer): Quick Tools (Explain, Hint, Example, Practice 5 Qs, Summary). Clicking opens popover (not page change) with parameters, and runs the tool inline.
+
+Engine (FastAPI)
+
+LLM routing:
+
+Gemini for general tutoring & math reasoning; stream completions. 
+DeepWiki
+
+Fallback/augmentation for “hard numerical reasoning”: Claude stream or other reasoning model. 
+GitHub
+
+Voice (v1): Whisper small.en STT + TTS (Coqui/ElevenLabs), streamed. (Avatar v2 later.)
+
+System Prompt (Tutor)
+SYSTEM (VaktaAI Tutor)
+You are a patient, rigorous conversational tutor for Indian students.
+Exam context: {board|JEE|NEET}. Class/Grade: {grade}. Subject: {subject}. Topic: {topic}.
+Language: {en|hi|hinglish}. Use Indian examples and units (₹, km, °C).
+Teaching loop each turn:
+1) TEACH one micro-concept (≤120 words) with a tiny example.
+2) ASK one check question (MCQ, 4 options) aligned to {board|exam}.
+3) If incorrect, EXPLAIN misconception, RE-TEACH simply.
+Every 3 turns: a 3-bullet RECAP.
+Use LaTeX for formulas ($...$). If using documents, cite them inline [Doc p.{page} §{heading}].
+Tone: warm, encouraging. Keep pace adaptive.
+TOOLS available: {retrieve, generate_quiz, make_flashcards}
+
+“Quick Tools” (work in the same page)
+
+Explain Concept → popover asks “depth (Quick/Standard/Deep)” → inserts an assistant message.
+
+Give Hint → generates one Socratic hint for the last user question.
+
+Show Example → 1 worked example (JEE/NEET difficulty toggle).
+
+Practice 5 Qs → mini-quiz modal (5 MCQs), immediate feedback.
+
+Get Summary → 5–7 bullets from the last 10 messages.
+
+2) DocChat (RAG over PDFs/YouTube/Web)
+UX
+
+Left: Sources (file upload, YouTube, URL).
+
+Center: Viewer (pdf.js or player) with page search.
+
+Right (drawer): Chat + Quick Actions (Summary, Highlights, Quiz, Flashcards, Export).
+
+Each Quick Action opens a modal (not a new page), chooses options (language, count), then runs; results stream into a panel and can be “Save to Notes/Quiz”.
+
+Engine
+
+Ingestion pipeline → extract → normalize → chunk (400–800 tokens, 80 overlap) → BGE-M3 embeddings → Qdrant upsert; progress events → UI. 
+W3C
+
+Retrieval per query: BM25 + vector (k=24) → bge-reranker-v2-m3 top-8 → generator with citations. 
+PyPI
+
+Answer Prompt (DocChat)
+SYSTEM (DocChat)
+Answer ONLY from CONTEXT. If insufficient, say what else is needed.
+Return crisp bullets with inline citations like [Doc {title}, p.{page} §{heading}].
+Language: {en|hi|hinglish}.
+CONTEXT:
+{top_chunks}
+USER:
+{question}
+
+3) Quiz (auto & manual; partial submit; detailed rationale)
+UX
+
+Create Quiz (modal):
+
+Setup: Auto | Manual
+
+Source: Topic | Document | YouTube | Website
+
+Fields: Subject, Topic, Difficulty, Count, Language
+
+Player:
+
+One item per view, timer optional.
+
+Partial submit accepted.
+
+After submit: Overall score + Correct/Wrong/Unattempted + rationales for all.
+
+Generator Prompt
+SYSTEM (Quiz Builder)
+Create {n} exam-style questions for {exam/board} on {topic}.
+Language: {lang}. Difficulty: {easy|med|hard}. Types: {mcq_single|mcq_multi|short}.
+For each, return JSON:
+{
+ "type": "...",
+ "stem": "...",
+ "options": ["A","B","C","D"],
+ "answer": ["B"], 
+ "rationale": "Why correct & others aren't",
+ "source_ref": "Doc p.12 §3.1" 
+}
+Constraints: single unambiguous key (unless multi), plausible distractors,
+mix Bloom levels, match JEE/NEET pattern where applicable.
+OPTIONAL CONTEXT:
+{chunks}
+
+4) Study Planner (exam-aware; SRS built-in)
+UX
+
+Wizard (modal, 4 steps):
+
+Basics: Board/Exam, Class, Subjects, Topics
+
+Exam Date (or “No date yet”)
+
+Preferences: morning/evening, intensity (Light/Regular/Intense), session 30/45/60m
+
+Include: Reminders, AI Tutor, Quizzes, Flashcards, DocChat, Extra resources
+
+Plan Board: tabs Today / Week / All; calendar + checklist; SRS due panel.
+
+Builder Prompt
+SYSTEM (Planner)
+Build a {2–8}-week plan for {board/exam}:{grade} Subject(s): {subjects}.
+Topics: {topics}. Exam date: {date|none}. Intensity: {light|regular|intense}.
+Each session 30/45/60 min. Mix tasks:
+- Read/DocChat specific sections (with pages)
+- Tutor checkpoint (15–20 min)
+- Quiz (10–20 Qs)
+- Flashcards (SRS: 1d, 3d, 7d, 16d)
+Return JSON array of {date, type, duration, title, description, refs?}.
+Language: {en|hi|hinglish}. Keep realistic loads for Indian school schedules.
+
+5) Notes (multi-source → Cornell style + auto flashcards)
+UX
+
+Templates grid (Record Lecture, Research Paper, Review Essay, Summarize Article, Blank).
+
+“Summarize Content” modal: paste URLs or upload; options (style, language); streamed result into the editor.
+
+Right “Quick Actions” drawer: Audio→Note, Video→Note, URL→Note, Generate Flashcards/Quiz, Export PDF (WeasyPrint). 
+Nutrient
+
+Summarizer Prompt
+SYSTEM (Notes)
+Produce Cornell-style notes in {lang} for {exam/board}.
+Sections:
+1) Big Idea (3–5 lines)
+2) Key Terms (10–15, term: definition)
+3) Summary (≤180 words)
+4) Section bullets per heading with examples & formulas ($...$)
+5) 8–12 flashcard pairs + 6–10 quizable facts
+Include source breadcrumbs (URL title or Doc page).
+SOURCE:
+{normalized_text}
+
+Quick Actions / Quick Tools — how they work (no page change)
+
+Pattern
+
+Click → opens Popover or Modal with minimal fields.
+
+On Generate, call FastAPI endpoint; stream tokens into the popover’s results panel; “Save” writes to Notes/Quiz/etc.
+
+Accessible per WAI-ARIA modal guidance. 
+W3C
+
+DocChat Quick Actions
+
+Summary (map-reduce over sections, citations preserved)
+
+Highlights (12–18 bullets)
+
+Flashcards (Q→A, Cloze optional)
+
+Quiz (MCQ set sized n)
+
+Export (PDF via WeasyPrint)
+
+Tutor Quick Tools
+
+Explain, Hint, Example, Practice 5, Summary (as above)
+
+Backend contracts (FastAPI, Python)
+POST /api/documents/upload         # multipart -> {document_id}
+POST /api/documents/by-url         # {url} -> {document_id}
+GET  /api/documents/{id}/status    # {status, pages, tokens}
+
+POST /api/chats                    # {mode, subject?, level?, language, topic?, doc_ids?} -> {chat_id}
+POST /api/chats/{id}/messages      # SSE {message} -> stream tokens
+GET  /api/chats/{id}/messages
+
+POST /api/quizzes                  # {source, subject, topic, n, difficulty, lang} -> {quiz_id}
+GET  /api/quizzes/{id}
+POST /api/quizzes/{id}/grade       # {answers[]} -> {score, breakdown, rationales}
+
+POST /api/study-plans
+GET  /api/study-plans/{id}
+PATCH /api/study-plans/{id}
+
+POST /api/notes/summarize          # {urls[], file?} -> {note_id}
+GET  /api/notes/{id}
+PATCH /api/notes/{id}
+
+
+Streaming: use EventSourceResponse for tutor/docchat/notes/quiz builds. 
+devdojo.com
+
+Retrieval stack (ready-to-wire)
+
+Embeddings: BAAI/bge-m3 (multilingual, long-context). 
+W3C
+
+Vector DB: Qdrant collections with cosine metric; Python client for upsert/search. 
+W3C
+
+Re-ranker: bge-reranker-v2-m3 for top-k trimming. 
+PyPI
+
+Model orchestration (who does what)
+
+AI Tutor: Primary = Gemini (math/tool use, streaming), fallback Claude for tough numerical reasoning and safety-tight generation. 
+DeepWiki
++1
+
+DocChat generation: Gemini/Claude (same router) + strict grounding.
+
+Quiz & Flashcards: Cohere (fast, low-cost) primary; fallback GPT-3.5-class (configure behind one interface). 
+W3C
+
+India alignment (content controls)
+
+Subject maps pull from CBSE Curriculum (classes 9–12), ICSE/IB frameworks, and NTA NEET blueprint; JEE Main/Adv chapter weights mirrored. (Link your taxonomy builder to official syllabi sources.) 
+GitHub
++1
+
+“That black overlay” (current bug) — fix it like this
+
+Popover ≠ transparent scrim. Use:
+
+Popover: no backdrop; high z-index; arrow; click-outside closes.
+
+Modal: opaque dim (rgba(15, 23, 42, 0.45)) + slight blur; prevent page from darkening unevenly; aria-modal="true" role="dialog"; return focus on close. Follow WAI-ARIA APG modal pattern to avoid stacked overlays & focus leaks. 
+W3C
+
+Telemetry & quality bars
+
+DocChat Grounding: % answers with ≥1 valid citation.
+
+Tutor Loop: % turns with a check question; correctness delta after remediation.
+
+Quiz: Score distribution, item difficulty p-values (optional later).
+
+Planner: Adherence (tasks done / assigned), SRS on-time rate.
+
+Latency: Ingest 100-page PDF <120s; first token <1.5s.
+
+Pointers to the exact docs you’ll use
+
+BGE-M3 model card (multilingual embeddings). 
+W3C
+
+bge-reranker-v2-m3 info. 
+PyPI
+
+Qdrant Python client/collections. 
+W3C
+
+FastAPI SSE (EventSourceResponse). 
+devdojo.com
+
+WAI-ARIA modal pattern (focus trap, aria-modal). 
+W3C
+
+Cohere API (generation/rerank). 
+W3C
+
+Gemini API (Python) for streaming. 
+DeepWiki
+
+Claude Python SDK (streaming). 
+GitHub
+
+WeasyPrint for PDF export. 
+Nutrient
+
+CBSE curriculum / NTA NEET bulletin for canonical syllabi. 
+GitHub
++1

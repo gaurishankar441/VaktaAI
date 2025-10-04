@@ -1,158 +1,160 @@
-import { openaiService } from './openai.js';
-import { vectorStore } from './vectorStore.js';
-import { storage } from '../storage.js';
-import type { Chunk, Document } from '@shared/schema';
+// BGE-M3 Embeddings Service
+// This would typically use HuggingFace Transformers.js or API
+// For now, implementing a placeholder that would be replaced with actual BGE-M3 integration
 
-export interface EmbeddingChunk extends Chunk {
-  embedding?: number[];
+export interface EmbeddingChunk {
+  id: string;
+  text: string;
+  embedding: number[];
+  metadata: {
+    source: string;
+    page?: number;
+    section?: string;
+    timestamp?: number;
+  };
 }
 
-export class EmbeddingService {
-  async createChunkEmbedding(chunk: Chunk): Promise<number[]> {
-    try {
-      const result = await openaiService.createEmbedding(chunk.text);
-      return result.embedding;
-    } catch (error) {
-      console.error(`Failed to create embedding for chunk ${chunk.id}:`, error);
-      throw error;
-    }
-  }
+export class EmbeddingsService {
+  private readonly maxChunkSize = 800;
+  private readonly overlapSize = 80;
 
-  async createChunkEmbeddings(chunks: Chunk[]): Promise<EmbeddingChunk[]> {
-    try {
-      const texts = chunks.map(chunk => chunk.text);
-      const results = await openaiService.createBatchEmbeddings(texts);
-      
-      return chunks.map((chunk, index) => ({
-        ...chunk,
-        embedding: results[index].embedding,
-      }));
-    } catch (error) {
-      console.error("Failed to create batch embeddings:", error);
-      throw error;
-    }
-  }
+  // Text chunking with overlap
+  chunkText(text: string, metadata: { source: string; page?: number }): Array<{
+    text: string;
+    metadata: typeof metadata & { section?: string };
+  }> {
+    const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0);
+    const chunks: Array<{ text: string; metadata: typeof metadata & { section?: string } }> = [];
+    
+    let currentChunk = '';
+    let chunkIndex = 0;
 
-  async storeChunkEmbeddings(chunks: EmbeddingChunk[], documentId: string): Promise<void> {
-    if (!vectorStore.isAvailable()) {
-      console.warn(`Vector store not available (tried Pinecone and Qdrant), skipping vector storage`);
-      return;
-    }
+    for (const sentence of sentences) {
+      const trimmedSentence = sentence.trim();
+      if (!trimmedSentence) continue;
 
-    try {
-      const document = await storage.getDocument(documentId);
-      if (!document) {
-        throw new Error(`Document ${documentId} not found`);
-      }
-
-      const namespace = `doc_${documentId}`;
-      const vectors = chunks
-        .filter(chunk => chunk.embedding)
-        .map(chunk => ({
-          id: chunk.id,
-          embedding: chunk.embedding!,
-          metadata: {
-            documentId: chunk.documentId,
-            text: chunk.text,
-            startPage: chunk.startPage,
-            endPage: chunk.endPage,
-            startTime: chunk.startTime ? parseFloat(chunk.startTime.toString()) : undefined,
-            endTime: chunk.endTime ? parseFloat(chunk.endTime.toString()) : undefined,
-            userId: document.userId,
-            documentTitle: document.title,
-            sourceType: document.sourceType,
-          },
-        }));
-
-      await vectorStore.upsertVectors(vectors, namespace);
-      console.log(`Stored ${vectors.length} vectors in ${vectorStore.getStoreName()} (namespace: ${namespace})`);
-
-      // Update chunks with vector references
-      for (const chunk of chunks) {
-        if (chunk.embedding) {
-          await storage.updateChunk(chunk.id, {
-            vectorId: chunk.id,
-            embeddingRef: `${namespace}:${chunk.id}`,
-          });
-        }
-      }
-    } catch (error) {
-      console.error("Failed to store chunk embeddings:", error);
-      throw error;
-    }
-  }
-
-  async queryDocumentEmbeddings(
-    query: string,
-    documentIds: string[],
-    topK: number = 10
-  ): Promise<Chunk[]> {
-    try {
-      const queryEmbedding = await openaiService.createEmbedding(query);
-      const allMatches: { chunk: Chunk; score: number }[] = [];
-
-      if (vectorStore.isAvailable()) {
-        // Query each document namespace
-        for (const documentId of documentIds) {
-          const namespace = `doc_${documentId}`;
-          
-          try {
-            const results = await vectorStore.queryVectors(
-              queryEmbedding.embedding,
-              topK,
-              namespace
-            );
-
-            for (const match of results.matches) {
-              const chunk = await storage.getChunk(match.id);
-              if (chunk) {
-                allMatches.push({ chunk, score: match.score });
-              }
+      // Check if adding this sentence would exceed chunk size
+      if (currentChunk.length + trimmedSentence.length > this.maxChunkSize) {
+        if (currentChunk) {
+          chunks.push({
+            text: currentChunk.trim(),
+            metadata: {
+              ...metadata,
+              section: `chunk_${chunkIndex}`
             }
-          } catch (error) {
-            console.warn(`Failed to query namespace ${namespace}:`, error);
-          }
+          });
+          
+          // Add overlap from previous chunk
+          const words = currentChunk.split(' ');
+          const overlapWords = words.slice(-this.overlapSize / 10); // Rough word estimate
+          currentChunk = overlapWords.join(' ') + ' ';
+          chunkIndex++;
         }
-
-        // Sort by score and return top results
-        allMatches.sort((a, b) => b.score - a.score);
-        return allMatches.slice(0, topK).map(match => match.chunk);
-      } else {
-        // Fallback: return all chunks from documents (less efficient)
-        console.warn("Vector store not available, using fallback text search");
-        const allChunks: Chunk[] = [];
-        
-        for (const documentId of documentIds) {
-          const chunks = await storage.getDocumentChunks(documentId);
-          allChunks.push(...chunks);
-        }
-
-        // Simple text matching fallback
-        return allChunks
-          .filter(chunk => 
-            chunk.text.toLowerCase().includes(query.toLowerCase())
-          )
-          .slice(0, topK);
       }
-    } catch (error) {
-      console.error("Failed to query document embeddings:", error);
-      throw error;
+      
+      currentChunk += trimmedSentence + '. ';
     }
+
+    // Add final chunk if any content remains
+    if (currentChunk.trim()) {
+      chunks.push({
+        text: currentChunk.trim(),
+        metadata: {
+          ...metadata,
+          section: `chunk_${chunkIndex}`
+        }
+      });
+    }
+
+    return chunks;
   }
 
-  async deleteDocumentEmbeddings(documentId: string): Promise<void> {
-    if (!vectorStore.isAvailable()) {
-      return;
+  // Generate embeddings using BGE-M3 (placeholder implementation)
+  async generateEmbeddings(texts: string[]): Promise<number[][]> {
+    // TODO: Implement actual BGE-M3 embedding generation
+    // This would typically call HuggingFace API or use transformers.js
+    
+    // Placeholder: generate random embeddings with consistent dimensions
+    const embeddingDim = 1024; // BGE-M3 typical dimension
+    
+    return texts.map(() => {
+      return Array.from({ length: embeddingDim }, () => Math.random() - 0.5);
+    });
+  }
+
+  // Process document for vector storage
+  async processDocument(
+    text: string, 
+    metadata: { source: string; title: string; type: string }
+  ): Promise<EmbeddingChunk[]> {
+    // Split document into pages or sections
+    const pages = this.splitIntoPages(text);
+    const allChunks: EmbeddingChunk[] = [];
+
+    for (let pageIndex = 0; pageIndex < pages.length; pageIndex++) {
+      const pageText = pages[pageIndex];
+      const chunks = this.chunkText(pageText, {
+        source: metadata.source,
+        page: pageIndex + 1
+      });
+
+      const texts = chunks.map(chunk => chunk.text);
+      const embeddings = await this.generateEmbeddings(texts);
+
+      for (let i = 0; i < chunks.length; i++) {
+        allChunks.push({
+          id: `${metadata.source}_p${pageIndex + 1}_c${i}`,
+          text: chunks[i].text,
+          embedding: embeddings[i],
+          metadata: {
+            ...chunks[i].metadata,
+            timestamp: Date.now()
+          }
+        });
+      }
     }
 
-    try {
-      const namespace = `doc_${documentId}`;
-      await vectorStore.deleteNamespace(namespace);
-    } catch (error) {
-      console.error(`Failed to delete embeddings for document ${documentId}:`, error);
-      // Don't throw, as this is cleanup
+    return allChunks;
+  }
+
+  // Split document into pages (simple implementation)
+  private splitIntoPages(text: string): string[] {
+    // Simple page splitting - in reality, this would depend on document type
+    const avgPageSize = 2000; // characters per page
+    const pages: string[] = [];
+    
+    for (let i = 0; i < text.length; i += avgPageSize) {
+      pages.push(text.slice(i, i + avgPageSize));
     }
+    
+    return pages;
+  }
+
+  // Generate query embedding
+  async generateQueryEmbedding(query: string): Promise<number[]> {
+    const embeddings = await this.generateEmbeddings([query]);
+    return embeddings[0];
+  }
+
+  // Cosine similarity calculation
+  cosineSimilarity(a: number[], b: number[]): number {
+    if (a.length !== b.length) return 0;
+    
+    let dotProduct = 0;
+    let normA = 0;
+    let normB = 0;
+    
+    for (let i = 0; i < a.length; i++) {
+      dotProduct += a[i] * b[i];
+      normA += a[i] * a[i];
+      normB += b[i] * b[i];
+    }
+    
+    normA = Math.sqrt(normA);
+    normB = Math.sqrt(normB);
+    
+    if (normA === 0 || normB === 0) return 0;
+    
+    return dotProduct / (normA * normB);
   }
 }
-
-export const embeddingService = new EmbeddingService();

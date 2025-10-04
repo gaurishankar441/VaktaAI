@@ -1,8 +1,8 @@
-# VaktaAI - AI-Powered Learning Platform
+# VaktaAI - Educational Platform
 
 ## Overview
 
-VaktaAI is a comprehensive AI-powered educational platform designed to transform static educational content (documents, videos) into interactive learning experiences. It leverages AI and RAG (Retrieval-Augmented Generation) to offer personalized features such as document chat, AI tutoring, quiz generation, flashcard creation, and structured note-taking. The platform aims to enhance learning through semantic search, adaptive study tools, and an innovative agentic RAG system for claim verification.
+VaktaAI is an AI-powered educational platform designed for Indian students preparing for competitive exams (JEE, NEET, CBSE). The platform provides personalized tutoring, document-based learning, adaptive quizzes, study planning, and Cornell-style note-taking. It leverages Google's Gemini AI and Anthropic's Claude for intelligent tutoring and content generation, with hybrid RAG (Retrieval-Augmented Generation) for document understanding.
 
 ## User Preferences
 
@@ -12,102 +12,146 @@ Preferred communication style: Simple, everyday language.
 
 ### Frontend Architecture
 
-The frontend is built with React, Vite, TypeScript, Tailwind CSS, and shadcn/ui, providing a fast, accessible, and customizable user interface. Key features include a dashboard, multi-document chat, AI tutor, structured notes, auto-generated quizzes, spaced repetition flashcards, and resource management. Routing is handled by wouter, and server state management by TanStack Query.
+**Technology Stack:**
+- React with TypeScript for type-safe component development
+- Vite as the build tool and development server
+- Wouter for client-side routing (lightweight alternative to React Router)
+- TanStack Query (React Query) for server state management and caching
+- Shadcn/ui component library built on Radix UI primitives
+- Tailwind CSS for styling with custom design tokens
+
+**Design System:**
+- Color scheme: Indigo primary (#4F46E5), with success, warning, and danger variants
+- Typography: Inter for UI, STIX Two Math for mathematical equations
+- Accessibility-first approach with keyboard navigation (Cmd/Ctrl-K command palette)
+- 8-point spacing system, rounded-xl (12px) borders, motion under 200ms
+- Responsive design with mobile breakpoint at 768px
+
+**UI Pattern Philosophy:**
+- "3-clicks max" to any core action
+- Modal-based flows for multi-step processes (blocking)
+- Popover for quick parameter adjustments (anchored, non-blocking)
+- Side drawer for quick actions and utilities (non-blocking)
+- WAI-ARIA compliance for modals with focus traps and proper labeling
+
+**Application Structure:**
+- App shell with left navigation rail, main content canvas, and optional right drawer
+- Five main feature modules: AI Tutor, DocChat, Quiz, Study Planner, and Notes
+- Shared UI components for consistency (LaTeX rendering, streaming text, etc.)
 
 ### Backend Architecture
 
-The backend is an Express.js server with TypeScript, implementing a RESTful API. It uses a service-oriented architecture for clear separation of concerns, including dedicated services for storage, RAG, OpenAI, Pinecone, Cohere, document processing, AI tutoring, quiz generation, and flashcard generation. Google Cloud Storage (via Replit Object Storage) handles file storage with an ACL system. Authentication is passwordless, using SMS OTP via Twilio Verify.
+**Technology Stack:**
+- Express.js server with TypeScript
+- Drizzle ORM for type-safe database operations
+- Neon serverless PostgreSQL database
+- Server-Sent Events (SSE) for real-time streaming responses
+- Multer for file upload handling (50MB limit)
 
-### Database Architecture
+**API Design:**
+- RESTful endpoints under `/api` prefix
+- Streaming endpoints for AI responses using EventSource
+- File upload endpoints for PDF and document processing
+- Session-based data storage with proper relational structures
 
-The system utilizes a serverless PostgreSQL database (Neon) with Drizzle ORM for type-safe queries. The schema supports core user management, content organization (folders, files, documents, chunks), and all learning features including chat threads, tutor sessions, notes, quizzes, and flashcards. Design decisions include soft deletes, JSON metadata fields, enum types, and foreign key constraints for data integrity.
+**Data Models:**
+The schema defines seven core entities:
 
-### RAG (Retrieval-Augmented Generation) Pipeline
+1. **Users**: Profile data including class, board, and learning streak
+2. **Chat Sessions**: Conversation contexts for tutor and docchat modes
+3. **Messages**: Individual messages within chat sessions with role-based tracking
+4. **Documents**: Uploaded PDFs, YouTube videos, or URLs with processing status
+5. **Quizzes**: Generated assessments with questions and correct answers
+6. **Quiz Attempts**: User responses and scoring data
+7. **Study Plans**: Structured learning schedules with tasks and reminders
+8. **Notes**: Cornell-style notes with big ideas, key terms, and flashcards
+9. **Flashcards**: Spaced repetition learning cards
 
-VaktaAI's RAG pipeline involves document ingestion, chunking, and embedding using OpenAI's `text-embedding-3-small` model. Vectors are stored in Pinecone, and retrieval is enhanced with Cohere's reranking. GPT-3.5-turbo streams responses, and citations link generated content back to source chunks.
+**AI Service Architecture:**
 
-### Agentic RAG with Claim Verification
+The system uses a dual-AI approach:
 
-An advanced Agentic RAG system verifies factual claims in AI responses using web sources. It employs a stateful ReAct loop (Reason-Act-Observe-Reflect) with an Orchestrator, Web Search Tool (Tavily, Bing, SerpAPI), and Web Fetch Tool. Robust security features are implemented for the Web Fetch Tool, including DNS rebinding prevention, private IP blocking, and resource protection, to ensure secure and reliable external data retrieval.
+- **Primary AI (Gemini)**: Google's Gemini 2.5 Flash for fast tutoring, quiz generation, and study planning. Gemini 2.5 Pro for complex reasoning tasks
+- **Fallback AI (Claude)**: Anthropic's Claude Sonnet 4 for complex numerical reasoning and problem-solving when needed
 
-### Authentication & Authorization
+**RAG Implementation:**
+- Hybrid search combining BM25 (keyword) and vector similarity (BGE-M3 embeddings)
+- Text chunking with 800-character chunks and 80-character overlap
+- In-memory vector store (production would use Qdrant)
+- BGE-reranker-v2-m3 for result ranking
+- Citation tracking for grounded responses
 
-**Last Updated:** October 1, 2025
+### Core Features
 
-**Strategy:** SMS OTP (Twilio Verify) with passwordless authentication
+**1. AI Tutor:**
+- Multi-step launcher modal (4-step wizard) for session configuration
+- Subject, level, topic, and language selection
+- Streaming responses with Server-Sent Events
+- Lesson plan panel showing learning objectives and progress
+- Quick tools for explanations, hints, examples, and practice
 
-**Flow:**
-1. User visits login page (`/login`)
-2. User enters phone number → POST `/api/auth/otp/start`
-3. Backend normalizes phone to E.164, sends 6-digit OTP via Twilio Verify SMS
-4. User enters OTP code → POST `/api/auth/otp/verify`
-5. Backend verifies with Twilio, finds/creates user by phone_e164
-6. Session regenerated (prevents fixation), userId stored in session
-7. Session cookie (httpOnly, secure in prod, sameSite=lax) returned to client
-8. Subsequent requests validated via `requireAuth` middleware
+**2. DocChat:**
+- PDF, YouTube, and URL ingestion
+- Document selection and viewing interface
+- PDF.js integration for document rendering (placeholder in current implementation)
+- Context-aware chat with citations from documents
+- Quick actions for summaries, highlights, quiz generation, and flashcard creation
 
-**Phone Number Handling:**
-- Normalization: India-focused (10-digit → +91, 12-digit starting with 91 → +)
-- Validation: E.164 format `/^\+[1-9]\d{1,14}$/`
-- Storage: `phone_e164` column (varchar, unique, not null)
+**3. Quiz System:**
+- AI-generated questions based on topics or documents
+- Multiple difficulty levels (easy, medium, hard)
+- Real-time quiz player with progress tracking
+- Question flagging and navigation
+- Detailed results with explanations and rationales
+- Performance analytics
 
-**Rate Limiting:**
-- 5 OTP requests per 10 minutes per normalized phone number
-- In-memory Map-based rate limiter with automatic cleanup
-- Prevents SMS abuse and brute-force attacks
+**4. Study Planner:**
+- Wizard-based plan creation
+- Exam-specific curriculum alignment (JEE, NEET, CBSE, CUET)
+- Intensity levels (light, regular, intense)
+- Multi-component integration (AI tutor, quizzes, flashcards, documents)
+- Calendar-based task scheduling
+- Smart reminders
 
-**Session Management:**
-- Express-session with connect-pg-simple (PostgreSQL session store)
-- Sessions table stores persistent session data
-- 7-day session lifetime
-- Session regeneration on login (prevents session fixation)
-- HttpOnly, secure (prod), sameSite=lax cookies
-- Sessions persist across server restarts
+**5. Cornell Notes:**
+- Structured note-taking with big idea, key terms, and summary sections
+- Auto-generated flashcards from notes
+- Audio, video, and URL-to-note conversion
+- Tag-based organization
+- Export capabilities
 
-**User Model:**
-- Phone-based authentication: `phone_e164` as unique identifier
-- Plan tiers supported (free, premium, etc.)
-- Soft deletes for GDPR compliance
+### External Dependencies
 
-**Environment Variables:**
-- `TWILIO_ACCOUNT_SID`: Twilio account identifier
-- `TWILIO_AUTH_TOKEN`: Twilio authentication token  
-- `TWILIO_VERIFY_SID`: Twilio Verify service SID
-- `SESSION_SECRET`: Express session secret (defaults to dev secret)
-- `OTP_CODE_TTL_SECONDS`: OTP expiration time (default: 180)
-- `OTP_RESEND_COOLDOWN_SECONDS`: Resend cooldown (default: 45)
+**AI Services:**
+- Google Generative AI SDK (@google/genai) for Gemini API access
+- Anthropic SDK (@anthropic-ai/sdk) for Claude API access
+- Environment variables required: `GEMINI_API_KEY` or `GOOGLE_AI_API_KEY`, `ANTHROPIC_API_KEY` or `CLAUDE_API_KEY`
 
-**Security Features:**
-- No passwords stored or managed
-- Session regeneration prevents fixation attacks
-- Rate limiting prevents SMS abuse
-- E.164 normalization prevents duplicate accounts
-- PostgreSQL session store for production persistence
+**Database:**
+- Neon serverless PostgreSQL (@neondatabase/serverless)
+- WebSocket support for serverless connections
+- Drizzle Kit for migrations and schema management
+- Environment variable required: `DATABASE_URL`
 
-**Note on Twilio Credentials:** 
-The Twilio integration is configured but requires valid credentials. If you see "Authenticate" errors, verify:
-1. TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_VERIFY_SID are correctly set
-2. Twilio account is active and has Verify service created
-3. Account has sufficient SMS credits
-4. Verify service is configured for SMS channel
+**UI Component Libraries:**
+- Radix UI primitives for accessible components (dialogs, dropdowns, tooltips, etc.)
+- Shadcn/ui as component wrapper
+- Lucide React for icons
+- React Hook Form with Zod validation for forms
 
-## External Dependencies
+**Development Tools:**
+- Replit-specific plugins for development (vite-plugin-runtime-error-modal, cartographer, dev-banner)
+- TSX for TypeScript execution in development
+- ESBuild for production builds
 
-### Third-Party Services
+**Potential Future Integrations:**
+- Qdrant vector database for production RAG
+- PDF.js for client-side PDF rendering
+- KaTeX for LaTeX mathematical equation rendering
+- YouTube Data API for video transcription
+- Audio transcription services for voice-to-note features
 
--   **Google Cloud Storage (Replit Object Storage):** File storage for uploaded documents, integrated via Replit sidecar.
--   **Pinecone:** Vector database for document embeddings, with OpenAI's `text-embedding-3-small` model.
--   **OpenAI:** AI services for embeddings and text generation (GPT-3.5-turbo), with streaming responses.
--   **Cohere:** Semantic reranking (Rerank v3/3.5) for improved retrieval quality.
--   **Neon Database:** Serverless PostgreSQL database for persistent data storage.
--   **Twilio Verify:** SMS OTP service for passwordless authentication.
--   **Tavily, Bing, SerpAPI:** Web search providers used by the Agentic RAG system.
-
-### Key npm Packages
-
--   **UI Components:** `@radix-ui/*`, `tailwindcss`, `class-variance-authority`, `lucide-react`.
--   **Data Management:** `@tanstack/react-query`, `drizzle-orm`, `zod`.
--   **File Upload:** `@uppy/core`, `@uppy/dashboard`, `@uppy/aws-s3`, `@uppy/react`.
--   **Routing:** `wouter`.
--   **Development:** `vite`, `typescript`, `tsx`, `esbuild`.
--   **Authentication:** `express-session`, `connect-pg-simple`, `twilio`.
+**Content Alignment:**
+- CBSE, ICSE, IB, and State Board curricula
+- JEE (Main/Advanced) and NEET UG exam blueprints
+- Official NTA and board curriculum mapping
