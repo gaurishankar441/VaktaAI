@@ -549,6 +549,124 @@ ${context}`
     }
   });
 
+  // ==== FLASHCARD ROUTES ====
+
+  // Get all flashcards for user
+  app.get("/api/flashcards", async (req, res) => {
+    try {
+      const userId = req.query.userId as string || 'default-user';
+      const flashcards = await storage.getFlashcardsByUser(userId);
+      res.json(flashcards);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch flashcards" });
+    }
+  });
+
+  // Get due flashcards for review (SRS)
+  app.get("/api/flashcards/due", async (req, res) => {
+    try {
+      const userId = req.query.userId as string || 'default-user';
+      const allCards = await storage.getFlashcardsByUser(userId);
+      const now = new Date();
+      const dueCards = allCards.filter(card => 
+        !card.nextReview || new Date(card.nextReview) <= now
+      );
+      res.json(dueCards);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch due flashcards" });
+    }
+  });
+
+  // Create flashcard
+  app.post("/api/flashcards", async (req, res) => {
+    try {
+      const flashcard = await storage.createFlashcard({
+        userId: req.body.userId || 'default-user',
+        noteId: req.body.noteId || null,
+        front: req.body.front,
+        back: req.body.back,
+        difficulty: 2.5, // SM-2 default ease factor
+        interval: 1,
+        lastReviewed: null,
+        nextReview: null
+      });
+      res.json(flashcard);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create flashcard" });
+    }
+  });
+
+  // Get flashcard
+  app.get("/api/flashcards/:id", async (req, res) => {
+    try {
+      const flashcard = await storage.getFlashcard(req.params.id);
+      if (!flashcard) {
+        return res.status(404).json({ error: "Flashcard not found" });
+      }
+      res.json(flashcard);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch flashcard" });
+    }
+  });
+
+  // Update flashcard (generic update)
+  app.put("/api/flashcards/:id", async (req, res) => {
+    try {
+      const updated = await storage.updateFlashcard(req.params.id, req.body);
+      if (!updated) {
+        return res.status(404).json({ error: "Flashcard not found" });
+      }
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update flashcard" });
+    }
+  });
+
+  // Review flashcard with SRS algorithm (SM-2)
+  app.put("/api/flashcards/:id/review", async (req, res) => {
+    try {
+      const { rating } = req.body; // 0-5: 0=total blackout, 5=perfect recall
+      const flashcard = await storage.getFlashcard(req.params.id);
+      
+      if (!flashcard) {
+        return res.status(404).json({ error: "Flashcard not found" });
+      }
+
+      // SM-2 algorithm with ease factor
+      // Use 'difficulty' field to store ease factor (starts at 2.5, min 1.3)
+      let easeFactor = flashcard.difficulty || 2.5;
+      let { interval = 1 } = flashcard;
+      
+      // Update ease factor based on rating
+      easeFactor = easeFactor + (0.1 - (5 - rating) * (0.08 + (5 - rating) * 0.02));
+      easeFactor = Math.max(1.3, easeFactor); // Minimum ease factor of 1.3
+      
+      // Update interval based on rating and ease factor
+      if (rating < 3) {
+        interval = 1; // Reset if poorly recalled
+      } else if (interval === 1) {
+        interval = 6; // First successful review: 6 days
+      } else {
+        interval = Math.round(interval * easeFactor); // Multiply by ease factor
+      }
+      
+      const now = new Date();
+      const nextReview = new Date(now.getTime() + interval * 24 * 60 * 60 * 1000);
+      
+      const updated = await storage.updateFlashcard(req.params.id, {
+        difficulty: easeFactor, // Store ease factor in difficulty field
+        interval,
+        lastReviewed: now,
+        nextReview
+      });
+      
+      res.json(updated);
+    } catch (error) {
+      console.error('Flashcard review error:', error);
+      res.status(500).json({ error: "Failed to update flashcard" });
+    }
+  });
+
   // ==== QUICK TOOLS ROUTES ====
   
   // Explain concept

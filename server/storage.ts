@@ -334,7 +334,7 @@ export class MemStorage implements IStorage {
       noteId: insertFlashcard.noteId ?? null,
       lastReviewed: insertFlashcard.lastReviewed ?? null,
       nextReview: insertFlashcard.nextReview ?? null,
-      difficulty: 0,
+      difficulty: 2.5, // SM-2 default ease factor
       interval: 1,
       createdAt: new Date()
     };

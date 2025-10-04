@@ -9,6 +9,7 @@ import DocChatPage from "./pages/docchat";
 import QuizPage from "./pages/quiz";
 import PlannerPage from "./pages/planner";
 import NotesPage from "./pages/notes";
+import FlashcardsPage from "./pages/flashcards";
 import NotFound from "./pages/not-found";
 
 function Router() {
@@ -21,6 +22,7 @@ function Router() {
         <Route path="/quiz" component={QuizPage} />
         <Route path="/planner" component={PlannerPage} />
         <Route path="/notes" component={NotesPage} />
+        <Route path="/flashcards" component={FlashcardsPage} />
         <Route component={NotFound} />
       </Switch>
     </AppShell>
