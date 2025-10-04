@@ -35,7 +35,7 @@ export default function ChatPanel({ chatId, selectedDocuments, onStartChat, hasD
     queryKey: ['/api/chats', chatId, 'messages'],
     queryFn: async () => {
       if (!chatId) return [];
-      const response = await apiRequest('GET', `/api/chats/${chatId}/messages`);
+      const response = await apiRequest('GET', `/chats/${chatId}/messages`);
       return response.json();
     },
     enabled: !!chatId
