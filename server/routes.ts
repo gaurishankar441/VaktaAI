@@ -25,6 +25,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // ==== CHAT ROUTES ====
   
+  // Get all chat sessions for user
+  app.get("/api/chats", async (req, res) => {
+    try {
+      const userId = 'default-user'; // In production, get from session
+      const mode = req.query.mode as string | undefined;
+      let chats = await storage.getChatSessionsByUser(userId);
+      
+      // Filter by mode if specified
+      if (mode) {
+        chats = chats.filter(chat => chat.mode === mode);
+      }
+      
+      res.json(chats);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch chat sessions" });
+    }
+  });
+
   // Create chat session
   app.post("/api/chats", async (req, res) => {
     try {
@@ -170,6 +188,17 @@ ${context}`
 
   // ==== DOCUMENT ROUTES ====
   
+  // Get all documents for user
+  app.get("/api/documents", async (req, res) => {
+    try {
+      const userId = 'default-user'; // In production, get from session
+      const documents = await storage.getDocumentsByUser(userId);
+      res.json(documents);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch documents" });
+    }
+  });
+
   // Upload document
   app.post("/api/documents/upload", upload.single('file'), async (req, res) => {
     try {
@@ -434,6 +463,35 @@ ${context}`
 
   // ==== NOTES ROUTES ====
   
+  // Get all notes for user
+  app.get("/api/notes", async (req, res) => {
+    try {
+      const userId = 'default-user'; // In production, get from session
+      const notes = await storage.getNotesByUser(userId);
+      res.json(notes);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch notes" });
+    }
+  });
+
+  // Create note
+  app.post("/api/notes", async (req, res) => {
+    try {
+      const note = await storage.createNote({
+        userId: req.body.userId || 'default-user',
+        title: req.body.title || 'Untitled Note',
+        content: req.body.content || { cues: '', notes: '', summary: '' },
+        sources: req.body.sources || [],
+        flashcards: req.body.flashcards || [],
+        tags: req.body.tags || []
+      });
+      res.json(note);
+    } catch (error) {
+      console.error('Note creation error:', error);
+      res.status(500).json({ error: "Failed to create note" });
+    }
+  });
+
   // Summarize content for notes
   app.post("/api/notes/summarize", async (req, res) => {
     try {
